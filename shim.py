@@ -1,4 +1,4 @@
-import docker, time, requests, json, socket, os
+import docker, time, requests, json, socket, os, sys
 
 import logging
 import logging.config
@@ -9,9 +9,10 @@ logger.debug('This is a debug message')
 
 client = docker.DockerClient(base_url='unix://var/run/docker.sock')
 
-token = os.getenv('PIHOLE_TOKEN')
-piholeAPI = os.getenv('PIHOLE_API')
-statePath = "/app/pihole.state"
+default_state_path = "/state/pihole.state"
+token = os.getenv('PIHOLE_TOKEN', "")
+piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/admin/api.php")
+statePath = os.getenv('STATE_FILE', default_state_path)
 
 global globalList
 globalList = set()
@@ -78,7 +79,7 @@ def apiCall(endpoint, action, domain=None, target=None):
   return(success, r.json())
 
 def listExisting():
-  logger.info("\nFetching current records...")
+  logger.info("Fetching current records...")
   dnsSuccess, dnsResult = apiCall("customdns", "get")
   dns = {tuple(x) for x in dnsResult["data"]}
   logger.debug(dns)
@@ -172,20 +173,25 @@ def handleList(newGlobalList, existingrecords):
   flushList()
 
 if __name__ == "__main__":
-  readState()
+  if token == "":
+    logger.warning("pihole token is blank, Set a token environment variable PIHOLE_TOKEN")
+    sys.exit(1)
 
-  while True:
-    containers = client.containers.list()
-    globalListBefore = globalList.copy()
-    newGlobalList = set()
-    existingrecords = listExisting()
-    for container in containers:
-      customRecordsLabel = container.labels.get("pihole.custom-record")
-      if customRecordsLabel:
-        customRecords = json.loads(customRecordsLabel)
-        for cr in customRecords:
-          newGlobalList.add(tuple(cr))
+  else:
+    readState()
 
-    handleList(newGlobalList, existingrecords)
+    while True:
+      containers = client.containers.list()
+      globalListBefore = globalList.copy()
+      newGlobalList = set()
+      existingrecords = listExisting()
+      for container in containers:
+        customRecordsLabel = container.labels.get("pihole.custom-record")
+        if customRecordsLabel:
+          customRecords = json.loads(customRecordsLabel)
+          for cr in customRecords:
+            newGlobalList.add(tuple(cr))
 
-    time.sleep(10)
+      handleList(newGlobalList, existingrecords)
+
+      time.sleep(10)
