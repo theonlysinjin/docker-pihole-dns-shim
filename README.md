@@ -1,18 +1,12 @@
 # docker-pihole-dns-shim
 Syncronise records founds through docker labels with pihole's custom dns and cname records.  
 # How to get started
-## Label
-Add records to pihole by labelling your docker containers, you can add as many labels(records) to individual containers as you need.  
-An example of the (json-encoded) label is as follows:
-```yaml
-pihole.custom-record:
-  - ["pihole-dns-shim.lan", "127.0.0.1"]
-  - ["pihole-dns-shim.lan", "www.google.com"]
-```
-as a docker label:
-```
-"pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"] [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
-```
+## Find your secret pihole token
+- Navigate to the [api tab](http://pi.hole:8080/admin/settings.php?tab=api) in your pihole settings
+- Click the Show API token button
+- Copy the Raw API Token
+- Use this as `PIHOLE_TOKEN`
+
 ## Run
 cli
 ```bash
@@ -39,6 +33,18 @@ services:
       # STATE_FILE: "/state/pihole.state"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+```
+## Label
+Add records to pihole by labelling your docker containers, you can add as many labels(records) to individual containers as you need.  
+An example of the (json-encoded) label is as follows:
+```yaml
+pihole.custom-record:
+  - ["pihole-dns-shim.lan", "127.0.0.1"]
+  - ["pihole-dns-shim.lan", "www.google.com"]
+```
+as a docker label:
+```
+"pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"] [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
 ```
 
 ## API Endpoints
