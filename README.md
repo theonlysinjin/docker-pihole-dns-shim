@@ -1,5 +1,7 @@
 # docker-pihole-dns-shim
-Syncronise records founds through docker labels with pihole's custom dns and cname records.  
+Syncronise records founds through docker labels with pihole's custom dns and cname records.
+
+[![Build & Push](https://github.com/theonlysinjin/docker-pihole-dns-shim/actions/workflows/build-push.yml/badge.svg?branch=main)](https://github.com/theonlysinjin/docker-pihole-dns-shim/actions/workflows/build-push.yml)
 # How to get started
 ## Label
 Add records to pihole by labelling your docker containers, you can add as many labels(records) to individual containers as you need.  
