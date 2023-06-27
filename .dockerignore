@@ -1,3 +1,6 @@
-.gitignore
-Dockerfile
-pihole.state
+*
+
+# Allow specific files
+!/shim.py
+!/logging.conf
+!/README.md
