@@ -4,31 +4,35 @@ Syncronise records founds through docker labels with pihole's custom dns and cna
 ## Label
 Add records to pihole by labelling your docker containers, you can add as many labels(records) to individual containers as you need.  
 An example of the (json-encoded) label is as follows:
+```yaml
+pihole.custom-record:
+  - ["pihole-dns-shim.lan", "127.0.0.1"]
+  - ["pihole-dns-shim.lan", "www.google.com"]
 ```
-"pihole.custom-record=[[\"pihole-shim.lan\", \"127.0.0.1\"]]"
+as a docker label:
 ```
-## Build
-```
-docker build -t pihole-shim .
+"pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"] [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
 ```
 ## Run
+cli
 ```bash
 docker run \
-  -l "pihole.custom-record=[[\"pihole-shim.lan\", \"127.0.0.1\"]]" \
+  -l "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"]]" \
   -e PIHOLE_TOKEN="" \
   -e PIHOLE_API="http://pi.hole:8080/admin/api.php" \
   -e STATE_FILE="/state/pihole.state" \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro pihole-shim
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  theonlysinjin/docker-pihole-dns-shim
 ```
 docker-compose.yml
 ```docker
 services:
-  pihole-shim:
-    container_name: "pihole-shim"
-    image: pihole-shim
+  pihole-dns-shim:
+    container_name: "pihole-dns-shim"
+    image: theonlysinjin/docker-pihole-dns-shim
     restart: unless-stopped
     labels:
-      - "pihole.custom-record=[[\"pihole-shim.lan\", \"127.0.0.1\"]]"
+      - "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"]]"
     environment:
       PIHOLE_TOKEN: "${PIHOLE_TOKEN}"
       PIHOLE_API: "${PIHOLE_API}"
