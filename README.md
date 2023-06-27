@@ -1,19 +1,20 @@
 # docker-pihole-dns-shim
-Get you dns records into pihole with docker labels
-
-# How To
+Syncronise records founds through docker labels with pihole's custom dns and cname records.  
+# How to get started
 ## Label
-Add a json encoded label to a docker container,
+Add records to pihole by labelling your docker containers, you can add as many labels(records) to individual containers as you need.  
+An example of the (json-encoded) label is as follows:
 ```
-- "pihole.custom-record=[[\"pihole-shim.lan\", \"127.0.0.1\"]]"
+"pihole.custom-record=[[\"pihole-shim.lan\", \"127.0.0.1\"]]"
 ```
-## To Build
+## Build
 ```
 docker build -t pihole-shim .
 ```
-## To Run
+## Run
 ```bash
 docker run \
+  -l "pihole.custom-record=[[\"pihole-shim.lan\", \"127.0.0.1\"]]" \
   -e PIHOLE_TOKEN="" \
   -e PIHOLE_API="http://pi.hole:8080/admin/api.php" \
   -e STATE_FILE="/state/pihole.state" \
@@ -36,8 +37,10 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 ```
 
-# API Endpoints
-## Manage A Records
+## API Endpoints
+Make a _GET_ request to the following endpoints.  
+Replace the parts of the url that are in uppercase.
+### Manage A Records
 Add new DNS record  
 http://pi.hole:8080/admin/api.php?customdns&action=add&ip=IPADDRESS&domain=DOMAIN&auth=XXX
 
@@ -47,7 +50,7 @@ http://pi.hole:8080/admin/api.php?customdns&action=delete&ip=IPADDRESS&domain=DO
 List existing DNS records  
 http://pi.hole:8080/admin/api.php?customdns&action=get&auth=XXX
 
-## Manage CNAME Records
+### Manage CNAME Records
 Add new CNAME record  
 http://pi.hole:8080/admin/api.php?customcname&action=add&domain=DOMAIN&target=TARGET&auth=XXX
 
