@@ -1,10 +1,10 @@
 # docker-pihole-dns-shim
-Syncronise records founds through docker labels with pihole's custom dns and cname records.  
+Synchronise records founds through docker labels with pihole's custom dns and cname records.  
 # How to get started
 ## Find your secret pihole token
 - Navigate to the [api tab](http://pi.hole:8080/admin/settings.php?tab=api) in your pihole settings
-- Click the Show API token button
-- Copy the Raw API Token
+- Click the `Show API token` button
+- Copy the `Raw API Token`
 - Use this as `PIHOLE_TOKEN`
 
 ## Run
@@ -26,7 +26,7 @@ services:
     image: theonlysinjin/docker-pihole-dns-shim
     restart: unless-stopped
     labels:
-      - "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"]]"
+      - pihole.custom-record=[["pihole-dns-shim.lan", "127.0.0.1"]]
     environment:
       PIHOLE_TOKEN: "${PIHOLE_TOKEN}"
       PIHOLE_API: "${PIHOLE_API}"
@@ -44,7 +44,7 @@ pihole.custom-record:
 ```
 as a docker label:
 ```
-"pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"] [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
+"pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"], [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
 ```
 
 ## API Endpoints
