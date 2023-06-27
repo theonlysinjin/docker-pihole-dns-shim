@@ -3,9 +3,7 @@ import docker, time, requests, json, socket, os, sys
 import logging
 import logging.config
 logging.config.fileConfig(fname='/app/logging.conf')
-# Get the logger specified in the file
 logger = logging.getLogger(__name__)
-logger.debug('This is a debug message')
 
 client = docker.DockerClient(base_url='unix://var/run/docker.sock')
 
