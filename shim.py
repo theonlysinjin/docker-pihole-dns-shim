@@ -78,13 +78,15 @@ def apiCall(endpoint, action, domain=None, target=None):
 
 def listExisting():
   logger.info("Fetching current records...")
+
   dnsSuccess, dnsResult = apiCall("customdns", "get")
-  dns = {tuple(x) for x in dnsResult["data"]}
-  logger.debug(dns)
+  dns = set([tuple(x) for x in dnsResult["data"]])
+  logger.debug("DNS Records: %s" %(dns))
 
   cnameSuccess, cnameResult = apiCall("customcname", "get")
-  cname = {tuple(x) for x in cnameResult["data"]}
-  logger.debug(cname)
+  cname = set([tuple(x) for x in cnameResult["data"]])
+  logger.debug("CName Records: %s" %(cname))
+
   logger.info("done")
   return({"dns": dns, "cname": cname})
 
@@ -154,8 +156,9 @@ def removeObject(obj, existingrecords):
     logger.error("Failed to remove from list: %s" %(str(result)))
 
 def handleList(newGlobalList, existingrecords):
-  toAdd = {x for x in newGlobalList if x not in globalList}
-  toRemove = {x for x in globalList if x not in newGlobalList}
+  toAdd = set([x for x in newGlobalList if x not in globalList])
+  toRemove = set([x for x in globalList if x not in newGlobalList])
+  toSync = set([x for x in globalList if ((x not in existingrecords["dns"]) and (x not in existingrecords["cname"]))])
 
   if len(toAdd) > 0:
     logger.debug("These are labels to add: %s" %(toAdd))
@@ -166,6 +169,11 @@ def handleList(newGlobalList, existingrecords):
     logger.debug("These are labels to remove: %s" %(toRemove))
     for remove in toRemove:
       removeObject(remove, existingrecords)
+
+  if len(toSync) > 0:
+    logger.debug("These are labels to sync: %s" %(toSync))
+    for sync in (toSync-toAdd-toRemove):
+      addObject(sync, existingrecords)
 
   printState()
   flushList()
