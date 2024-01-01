@@ -1,9 +1,4 @@
-import docker, time, requests, json, socket, os, sys
-
-import logging
-import logging.config
-logging.config.fileConfig(fname='/app/logging.conf')
-logger = logging.getLogger(__name__)
+import docker, time, requests, json, socket, os, sys, logging
 
 client = docker.DockerClient(base_url='unix://var/run/docker.sock')
 
@@ -11,6 +6,17 @@ default_state_path = "/state/pihole.state"
 token = os.getenv('PIHOLE_TOKEN', "")
 piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/admin/api.php")
 statePath = os.getenv('STATE_FILE', default_state_path)
+
+
+loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
+logging.basicConfig(
+    level=loggingLevel,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 global globalList
 globalList = set()
@@ -50,11 +56,11 @@ def readState():
     logger.info("Loading skipped, no db found.")
 
 def printState():
-  logger.info("State")
-  logger.info("-----------")
+  logger.debug("State")
+  logger.debug("-----------")
   for obj in globalList:
-    logger.info(obj)
-  logger.info("-----------")
+    logger.debug(obj)
+  logger.debug("-----------")
 
 def apiCall(endpoint, action, domain=None, target=None):
   if (action == "get"):
@@ -77,7 +83,7 @@ def apiCall(endpoint, action, domain=None, target=None):
   return(success, r.json())
 
 def listExisting():
-  logger.info("Fetching current records...")
+  logger.debug("Fetching current records...")
 
   dnsSuccess, dnsResult = apiCall("customdns", "get")
   dns = set([tuple(x) for x in dnsResult["data"]])
@@ -87,7 +93,7 @@ def listExisting():
   cname = set([tuple(x) for x in cnameResult["data"]])
   logger.debug("CName Records: %s" %(cname))
 
-  logger.info("done")
+  logger.debug("done")
   return({"dns": dns, "cname": cname})
 
 def addObject(obj, existingrecords):
@@ -187,6 +193,7 @@ if __name__ == "__main__":
     readState()
 
     while True:
+      logger.debug("Listing containers...")
       containers = client.containers.list()
       globalListBefore = globalList.copy()
       newGlobalList = set()
@@ -199,5 +206,6 @@ if __name__ == "__main__":
             newGlobalList.add(tuple(cr))
 
       handleList(newGlobalList, existingrecords)
+      logger.info("Run sync")
 
       time.sleep(10)

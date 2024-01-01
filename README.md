@@ -30,6 +30,7 @@ services:
     environment:
       PIHOLE_TOKEN: "${PIHOLE_TOKEN}"
       PIHOLE_API: "${PIHOLE_API}"
+      # LOGGING_LEVEL: "DEBUG"
       # STATE_FILE: "/state/pihole.state"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
@@ -46,6 +47,11 @@ as a docker label:
 ```
 "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"], [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
 ```
+
+# Development
+## Debug
+You can turn on extra logging by setting the log level to DEBUG,  
+Set an env variable in the container with `LOGGING_LEVEL="DEBUG"`
 
 ## API Endpoints
 Make a _GET_ request to the following endpoints.  
