@@ -2,8 +2,13 @@ FROM alpine:latest
 
 WORKDIR /app
 
-RUN apk update && apk add bash curl python3 py3-pip
-RUN pip3 install docker requests
+RUN apk add --no-cache \
+  bash \
+  curl \
+  python3 \
+  py3-pip \
+  py3-docker-py \
+  py3-requests
 
 COPY . /app
 RUN mkdir /state
