@@ -1,6 +1,8 @@
 import docker, time, requests, json, socket, os, sys, logging
 
-client = docker.DockerClient(base_url='unix://var/run/docker.sock')
+dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
+
+client = docker.DockerClient(base_url=dockerUrl)
 
 default_state_path = "/state/pihole.state"
 token = os.getenv('PIHOLE_TOKEN', "")
