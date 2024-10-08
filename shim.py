@@ -1,12 +1,14 @@
 import docker, time, requests, json, socket, os, sys, logging
 
-client = docker.DockerClient(base_url='unix://var/run/docker.sock')
+dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
+
+client = docker.DockerClient(base_url=dockerUrl)
 
 default_state_path = "/state/pihole.state"
 token = os.getenv('PIHOLE_TOKEN', "")
 piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/admin/api.php")
 statePath = os.getenv('STATE_FILE', default_state_path)
-
+intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
 
 loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
 logging.basicConfig(
@@ -208,4 +210,4 @@ if __name__ == "__main__":
       handleList(newGlobalList, existingrecords)
       logger.info("Run sync")
 
-      time.sleep(10)
+      time.sleep(intervalSeconds)
