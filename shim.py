@@ -23,10 +23,20 @@ global globalList
 globalList = set()
 
 endpoints = {
-    "auth": {
+    "createAuth": {
       "type": "post",
       "endpoint": "/auth",
       "payloadKeys": ["session", "sid"]
+    },
+    "getAuths": {
+      "type": "get",
+      "endpoint": "/auth/sessions",
+      "payloadKeys": ["sessions"]
+    },
+    "deleteAuth": {
+      "type": "delete",
+      "endpoint": "/auth/session",
+      "payloadKeys": []
     },
     "dns": {
       "type": "get",
@@ -110,36 +120,55 @@ def apiCall(endpointKey, payload=None):
   type = endpointDict["type"]
   endpoint = "%s%s" %(piholeAPI, endpointDict["endpoint"])
   headers = {
-    "sid": sid
+    "sid": sid,
+    "User-Agent": "docker-pihole-dns-shim",
   }
   if type == "get":
     response = requests.get(endpoint, params=payload, headers=headers)
   elif type == "post":
     response = requests.post(endpoint, json=payload, headers=headers)
   elif type == "delete":
-    response = requests.delete(endpoint, headers=headers)
+    response = requests.delete("%s/%s" %(endpoint, payload), headers=headers)
   elif type == "put":
     response = requests.put("%s/%s" %(endpoint, payload), headers=headers)
 
   logger.debug("Response code: %s" %(response.status_code))
 
-  if response.status_code == 200:
+  extractedResponse = None
+
+  if response.status_code == 200 :
+    success = True
+    extractedResponse =  extract_from_response(response.json(), payloadKeys)
+    logger.debug("Extracted Response: %s", extractedResponse)
+  elif response.status_code == 204:
     success = True
   else:
     success = False
 
-  extractedResponse =  extract_from_response(response.json(), payloadKeys)
-  logger.debug("Extracted Response: %s", extractedResponse)
-  return(success,extractedResponse)
+  return(success, extractedResponse)
 
 def auth():
   logger.debug("Authenticating with pihole API...")
-  success, response =  apiCall("auth", payload={"password": token})
+  success, response = apiCall("createAuth", payload={"password": token})
   if not success:
     logger.error("Authentication failed: %s" %(response))
     sys.exit(1)
   logger.debug("done")
   return response
+
+def cleanSessions():
+  logger.debug("Removing old sessions...")
+  success, sessions = apiCall("getAuths")
+  if not success:
+    logger.error("Failed to fetch sessions: %s" %(sessions))
+    return
+  for session in sessions:
+    if session["current_session"] == False and session["user_agent"] == "docker-pihole-dns-shim":
+      logger.debug("Removing session: %s" %(session["id"]))
+      success, response = apiCall("deleteAuth", payload=session["id"])
+      if not success:
+        logger.error("Failed to delete session %s: %s" %(session, response))
+  logger.debug("done")
 
 def listExisting():
   logger.debug("Fetching current records...")
@@ -181,7 +210,6 @@ def addObject(obj, existingRecords):
     logger.info("Added to global list after success: %s" %(str(obj)))
   else:
     logger.error("Failed to add to list: %s" %(str(result)))
-
 
 def removeObject(obj, existingRecords):
   logger.info("Removing: " + str(obj))
@@ -240,6 +268,7 @@ if __name__ == "__main__":
   else:
     readState()
     sid = auth()
+    cleanSessions()
 
     while True:
       logger.info("Running sync")
