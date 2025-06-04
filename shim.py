@@ -22,6 +22,20 @@ logger = logging.getLogger(__name__)
 global globalList
 globalList = set()
 
+endpoints = {
+    "auth": {
+      "type": "post",
+      "endpoint": "/auth",
+    },
+    "dns": {
+      "type": "get",
+      "endpoint": "/config/dns.hosts",
+    },
+     "cname": {
+      "type": "get",
+      "endpoint": "/config/dns.cnameRecords",
+    },
+}
 
 def ipTest(ip):
   is_ip = False
@@ -62,35 +76,48 @@ def printState():
   for obj in globalList:
     logger.debug(obj)
   logger.debug("-----------")
+sid = None
+def apiCall(endpointKey, payload=None):
+  endpointDict = endpoints[endpointKey]
+  type = endpointDict["type"]
+  endpoint = "%s%s" %(piholeAPI, endpointDict["endpoint"])
+  headers = {
+    "sid": sid
+  }
+  if type == "get":
+    response = requests.get(endpoint, params=payload, headers=headers)
+  elif type == "post":
+    response = requests.post(endpoint, json=payload, headers=headers)
+  elif type == "delete":
+    response = requests.delete(endpoint, json=payload, headers=headers)
 
-def apiCall(endpoint, action, domain=None, target=None):
-  if (action == "get"):
-    r = requests.get("%s?auth=%s&%s&action=%s" %(piholeAPI, token, endpoint, action))
-    if r.json()["data"]:
-      success = True
-    else:
-      success = False
+  logger.debug("Response code: %s" %(response.status_code))
+  logger.debug(response.json())
+
+  if response.status_code == 200:
+    success = True
   else:
-    if endpoint == "customdns":
-      paramName="ip"
-    elif endpoint == "customcname":
-      paramName="target"
-    r = requests.get("%s?auth=%s&%s&action=%s&domain=%s&%s=%s" %(piholeAPI, token, endpoint, action, domain, paramName, target))
-    if r.json()["success"]:
-      success = True
-    else:
-      success = False
+    success = False
 
-  return(success, r.json())
+  return(success, response.json())
+
+def auth():
+  logger.debug("Authenticating with pihole API...")
+  success, response =  apiCall("auth", payload={"password": token})
+  if not success:
+    logger.error("Authentication failed: %s" %(response))
+    sys.exit(1)
+  logger.debug("done")
+  return response["session"]["sid"]
 
 def listExisting():
   logger.debug("Fetching current records...")
 
-  dnsSuccess, dnsResult = apiCall("customdns", "get")
+  dnsSuccess, dnsResult = apiCall("dns")
   dns = set([tuple(x) for x in dnsResult["data"]])
   logger.debug("DNS Records: %s" %(dns))
 
-  cnameSuccess, cnameResult = apiCall("customcname", "get")
+  cnameSuccess, cnameResult = apiCall("cname")
   cname = set([tuple(x) for x in cnameResult["data"]])
   logger.debug("CName Records: %s" %(cname))
 
@@ -194,6 +221,7 @@ if __name__ == "__main__":
     readState()
 
     while True:
+      sid = auth()
       logger.debug("Listing containers...")
       containers = client.containers.list()
       globalListBefore = globalList.copy()
