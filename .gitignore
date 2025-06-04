@@ -1,1 +1,3 @@
 pihole.state
+.env
+!.env.*
