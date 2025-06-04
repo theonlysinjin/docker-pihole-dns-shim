@@ -1,3 +1,5 @@
 pihole.state
 .env
 !.env.*
+tmp/*
+!tmp/.keep
