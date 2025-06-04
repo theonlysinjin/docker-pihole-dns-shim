@@ -13,9 +13,14 @@ Synchronise records founds through docker labels with pihole's custom dns and cn
 - Navigate to the [api tab](http://pi.hole:8080/admin/settings/api) in your pihole settings
 - Click the `Basic` button to change to `Expert`
 - Click the `Configure app password`
-- Copy the new app password and save it, NOTE: this will also change your login password to be this app token...
+- Copy the new app password and save it
 - Click `Replace app password`
 - Use this as `PIHOLE_TOKEN`
+- Also enable the `webserver.api.app_sudo` in the config for your pihole
+
+OR
+
+- use your admin login password for `PIHOLE_TOKEN`
 
 ### Run
 

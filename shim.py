@@ -159,20 +159,20 @@ def addObject(obj, existingRecords):
   logger.debug("domain (%s): %s" %(type(domain), domain))
   logger.debug("target (%s): %s" %(type(target), target))
   logger.debug("is_ip: %s" %(str(is_ip)))
-  payload="%s %s" %(domain, target)
+  payload="%s %s" %(target, domain)
 
   if is_ip:
     if obj in existingRecords["dns"]:
-      success, result = [True, "This record already exists, adding to state."]
+      success = True
     else:
       success, result = apiCall("createDns", payload=payload)
   else:
     if obj in existingRecords["cname"]:
-      success, result = [True, "This record already exists, adding to state."]
+      success = True
     else:
       success, result = apiCall("createCname", payload=payload)
 
-  if success:
+  if success or ("error" in result and "message" in result["error"] and result["error"]["message"] == "Item already present"):
     globalList.add(obj)
     logger.info("Added to global list after success: %s" %(str(obj)))
   else:
@@ -240,10 +240,10 @@ if __name__ == "__main__":
 
   else:
     readState()
+    sid = auth()
 
     while True:
       logger.info("Running sync")
-      sid = auth()
       logger.debug("Listing containers...")
       containers = client.containers.list()
       globalListBefore = globalList.copy()
