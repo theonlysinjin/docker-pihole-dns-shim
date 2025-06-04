@@ -26,47 +26,42 @@ endpoints = {
     "createAuth": {
       "type": "post",
       "endpoint": "/auth",
-      "payloadKeys": ["session", "sid"]
+      "payloadExtractor": lambda payload: payload["session"]["sid"],
     },
     "getAuths": {
       "type": "get",
       "endpoint": "/auth/sessions",
-      "payloadKeys": ["sessions"]
+      "payloadExtractor": lambda payload: payload["sessions"],
     },
     "deleteAuth": {
       "type": "delete",
       "endpoint": "/auth/session",
-      "payloadKeys": []
     },
     "dns": {
       "type": "get",
       "endpoint": "/config/dns/hosts",
-      "payloadKeys": ["config", "dns", "hosts"]
+      "payloadExtractor": lambda payload: payload["config"]["dns"]["hosts"],
     },
     "createDns": {
       "type": "put",
       "endpoint": "/config/dns/hosts",
-      "payloadKeys": []
     },
     "deleteDns": {
       "type": "delete",
       "endpoint": "/config/dns/hosts",
-      "payloadKeys": []
     },
     "cname": {
       "type": "get",
       "endpoint": "/config/dns/cnameRecords",
-      "payloadKeys": ["config", "dns", "cnameRecords"]
+      "payloadExtractor": lambda payload: payload["config"]["dns"]["cnameRecords"],
     },
     "createCname": {
       "type": "put",
       "endpoint": "/config/dns/cnameRecords",
-      "payloadKeys": []
     },
     "deleteCname": {
       "type": "delete",
       "endpoint": "/config/dns/cnameRecords",
-      "payloadKeys": []
     },
 }
 
@@ -106,17 +101,11 @@ def printState():
     logger.debug(obj)
   logger.debug("-----------")
 
-def extract_from_response(response, key_sequence):
-    value = response
-    for key in key_sequence:
-        value = value[key]
-    return value
-
 sid = None
 
 def apiCall(endpointKey, payload=None):
   endpointDict = endpoints[endpointKey]
-  payloadKeys = endpointDict["payloadKeys"]
+  payloadExtractor = endpointDict.get("payloadExtractor", lambda x: x)
   type = endpointDict["type"]
   endpoint = "%s%s" %(piholeAPI, endpointDict["endpoint"])
   headers = {
@@ -138,11 +127,12 @@ def apiCall(endpointKey, payload=None):
 
   if response.status_code == 200:
     success = True
-    extractedResponse =  extract_from_response(response.json(), payloadKeys)
+    extractedResponse = payloadExtractor(response.json())
     logger.debug("Extracted Response: %s", extractedResponse)
   elif response.status_code == 204 or response.status_code == 201:
     success = True
   else:
+    extractedResponse = response.json()
     success = False
 
   return(success, extractedResponse)
@@ -178,7 +168,7 @@ def listExisting():
   logger.debug("DNS Records: %s" %(dns))
 
   cnameSuccess, cnameResult = apiCall("cname")
-  cname = set(tuple(item.split(" ", 1)[::-1]) for item in cnameResult)
+  cname = set(tuple(item.split(",", 1)) for item in cnameResult)
   logger.debug("CName Records: %s" %(cname))
 
   logger.debug("done")
@@ -192,18 +182,17 @@ def addObject(obj, existingRecords):
   logger.debug("domain (%s): %s" %(type(domain), domain))
   logger.debug("target (%s): %s" %(type(target), target))
   logger.debug("is_ip: %s" %(str(is_ip)))
-  payload="%s %s" %(target, domain)
 
   if is_ip:
     if obj in existingRecords["dns"]:
       success = True
     else:
-      success, result = apiCall("createDns", payload=payload)
+      success, result = apiCall("createDns", payload="%s %s" %(target, domain))
   else:
     if obj in existingRecords["cname"]:
       success = True
     else:
-      success, result = apiCall("createCname", payload=payload)
+      success, result = apiCall("createCname", payload="%s,%s" %(domain,target))
 
   if success or ("error" in result and "message" in result["error"] and result["error"]["message"] == "Item already present"):
     globalList.add(obj)
@@ -218,18 +207,16 @@ def removeObject(obj, existingRecords):
   logger.debug("domain (%s): %s" %(type(domain), domain))
   logger.debug("target (%s): %s" %(type(target), target))
   logger.debug("is_ip: %s" %(str(is_ip)))
-  payload="%s %s" %(target, domain)
-
   if is_ip:
     if obj not in existingRecords["dns"]:
       success = True
     else:
-      success, result = apiCall("deleteDns",payload=payload)
+      success, result = apiCall("deleteDns",payload="%s %s" %(target, domain))
   else:
     if obj not in existingRecords["cname"]:
       success = True
     else:
-      success, result = apiCall("deleteCname",payload=payload)
+      success, result = apiCall("deleteCname",payload="%s,%s" %(domain, target))
 
   if success:
     globalList.remove(obj)
