@@ -38,6 +38,11 @@ endpoints = {
       "endpoint": "/config/dns/hosts",
       "payloadKeys": []
     },
+    "deleteDns": {
+      "type": "delete",
+      "endpoint": "/config/dns/hosts",
+      "payloadKeys": []
+    },
     "cname": {
       "type": "get",
       "endpoint": "/config/dns/cnameRecords",
@@ -45,7 +50,12 @@ endpoints = {
     },
     "createCname": {
       "type": "put",
-      "endpoint": "/config/dns/hosts",
+      "endpoint": "/config/dns/cnameRecords",
+      "payloadKeys": []
+    },
+    "deleteCname": {
+      "type": "delete",
+      "endpoint": "/config/dns/cnameRecords",
       "payloadKeys": []
     },
 }
@@ -67,9 +77,6 @@ def flushList():
   with open(statePath, "w") as outfile:
     outfile.write(jsonObject)
 
-  # with open(statePath, "wb") as fp:
-  #   pickle.dump(globalList, fp)
-
 def readState():
   fileExists = os.path.exists(statePath)
   if fileExists:
@@ -79,7 +86,6 @@ def readState():
       for obj in readList:
         logger.info("From file (%s): %s" %(type(obj), obj))
         globalList.add(tuple(obj))
-      # globalList = set(readList)
   else:
     logger.info("Loading skipped, no db found.")
 
@@ -115,9 +121,7 @@ def apiCall(endpointKey, payload=None):
   elif type == "put":
     response = requests.put("%s/%s" %(endpoint, payload), headers=headers)
 
-
   logger.debug("Response code: %s" %(response.status_code))
-  # logger.debug("Response: %s", response.json())
 
   if response.status_code == 200:
     success = True
@@ -141,11 +145,11 @@ def listExisting():
   logger.debug("Fetching current records...")
 
   dnsSuccess, dnsResult = apiCall("dns")
-  dns = set(dnsResult)
+  dns = set(tuple(item.split(" ", 1)[::-1]) for item in dnsResult)
   logger.debug("DNS Records: %s" %(dns))
 
   cnameSuccess, cnameResult = apiCall("cname")
-  cname = set(cnameResult)
+  cname = set(tuple(item.split(" ", 1)[::-1]) for item in cnameResult)
   logger.debug("CName Records: %s" %(cname))
 
   logger.debug("done")
@@ -180,29 +184,24 @@ def addObject(obj, existingRecords):
 
 
 def removeObject(obj, existingRecords):
-  domain = False
   logger.info("Removing: " + str(obj))
-
   domain = obj[0]
   is_ip, target = ipTest(obj[1])
   logger.debug("domain (%s): %s" %(type(domain), domain))
   logger.debug("target (%s): %s" %(type(target), target))
   logger.debug("is_ip: %s" %(str(is_ip)))
+  payload="%s %s" %(target, domain)
 
   if is_ip:
     if obj not in existingRecords["dns"]:
-      success, result = [True, "This record doesn't exist, removing from state."]
-      logger.debug(result)
+      success = True
     else:
-      success, result = apiCall("customdns", "delete", domain, target)
-      logger.debug(result)
+      success, result = apiCall("deleteDns",payload=payload)
   else:
     if obj not in existingRecords["cname"]:
-      success, result = [True, "This record doesn't exist, removing from state."]
-      logger.debug(result)
+      success = True
     else:
-      success, result = apiCall("customcname", "delete", domain, target)
-      logger.debug(result)
+      success, result = apiCall("deleteCname",payload=payload)
 
   if success:
     globalList.remove(obj)
@@ -215,18 +214,18 @@ def handleList(newGlobalList, existingRecords):
   toRemove = set([x for x in globalList if x not in newGlobalList])
   toSync = set([x for x in globalList if ((x not in existingRecords["dns"]) and (x not in existingRecords["cname"]))])
 
+  logger.debug("These are labels to add: %s" %(toAdd))
   if len(toAdd) > 0:
-    logger.debug("These are labels to add: %s" %(toAdd))
     for add in toAdd:
       addObject(add, existingRecords)
 
+  logger.debug("These are labels to remove: %s" %(toRemove))
   if len(toRemove) > 0:
-    logger.debug("These are labels to remove: %s" %(toRemove))
     for remove in toRemove:
       removeObject(remove, existingRecords)
 
+  logger.debug("These are labels to sync: %s" %(toSync))
   if len(toSync) > 0:
-    logger.debug("These are labels to sync: %s" %(toSync))
     for sync in (toSync-toAdd-toRemove):
       addObject(sync, existingRecords)
 
