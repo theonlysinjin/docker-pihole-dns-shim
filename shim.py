@@ -33,10 +33,20 @@ endpoints = {
       "endpoint": "/config/dns/hosts",
       "payloadKeys": ["config", "dns", "hosts"]
     },
+    "createDns": {
+      "type": "put",
+      "endpoint": "/config/dns/hosts",
+      "payloadKeys": []
+    },
     "cname": {
       "type": "get",
       "endpoint": "/config/dns/cnameRecords",
       "payloadKeys": ["config", "dns", "cnameRecords"]
+    },
+    "createCname": {
+      "type": "put",
+      "endpoint": "/config/dns/hosts",
+      "payloadKeys": []
     },
 }
 
@@ -101,7 +111,10 @@ def apiCall(endpointKey, payload=None):
   elif type == "post":
     response = requests.post(endpoint, json=payload, headers=headers)
   elif type == "delete":
-    response = requests.delete(endpoint, json=payload, headers=headers)
+    response = requests.delete(endpoint, headers=headers)
+  elif type == "put":
+    response = requests.put("%s/%s" %(endpoint, payload), headers=headers)
+
 
   logger.debug("Response code: %s" %(response.status_code))
   # logger.debug("Response: %s", response.json())
@@ -140,28 +153,24 @@ def listExisting():
 
 def addObject(obj, existingRecords):
   domain = False
-  ip = False
-  cname = False
   logger.info("Adding: " + str(obj))
   domain = obj[0]
   is_ip, target = ipTest(obj[1])
   logger.debug("domain (%s): %s" %(type(domain), domain))
   logger.debug("target (%s): %s" %(type(target), target))
   logger.debug("is_ip: %s" %(str(is_ip)))
+  payload="%s %s" %(domain, target)
+
   if is_ip:
     if obj in existingRecords["dns"]:
       success, result = [True, "This record already exists, adding to state."]
-      logger.debug(result)
     else:
-      success, result = apiCall("customdns", "add", domain, target)
-      logger.debug(result)
+      success, result = apiCall("createDns", payload=payload)
   else:
     if obj in existingRecords["cname"]:
       success, result = [True, "This record already exists, adding to state."]
-      logger.debug(result)
     else:
-      success, result = apiCall("customcname", "add", domain, target)
-      logger.debug(result)
+      success, result = apiCall("createCname", payload=payload)
 
   if success:
     globalList.add(obj)
@@ -172,8 +181,6 @@ def addObject(obj, existingRecords):
 
 def removeObject(obj, existingRecords):
   domain = False
-  ip = False
-  cname = False
   logger.info("Removing: " + str(obj))
 
   domain = obj[0]
@@ -235,6 +242,7 @@ if __name__ == "__main__":
     readState()
 
     while True:
+      logger.info("Running sync")
       sid = auth()
       logger.debug("Listing containers...")
       containers = client.containers.list()
@@ -249,6 +257,5 @@ if __name__ == "__main__":
             newGlobalList.add(tuple(cr))
 
       handleList(newGlobalList, existingRecords)
-      logger.info("Run sync")
-
+      logger.info("Sleeping for %s" %(intervalSeconds))
       time.sleep(intervalSeconds)
