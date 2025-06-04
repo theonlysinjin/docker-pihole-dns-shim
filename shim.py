@@ -26,14 +26,17 @@ endpoints = {
     "auth": {
       "type": "post",
       "endpoint": "/auth",
+      "payloadKeys": ["session", "sid"]
     },
     "dns": {
       "type": "get",
-      "endpoint": "/config/dns.hosts",
+      "endpoint": "/config/dns/hosts",
+      "payloadKeys": ["config", "dns", "hosts"]
     },
-     "cname": {
+    "cname": {
       "type": "get",
-      "endpoint": "/config/dns.cnameRecords",
+      "endpoint": "/config/dns/cnameRecords",
+      "payloadKeys": ["config", "dns", "cnameRecords"]
     },
 }
 
@@ -76,9 +79,18 @@ def printState():
   for obj in globalList:
     logger.debug(obj)
   logger.debug("-----------")
+
+def extract_from_response(response, key_sequence):
+    value = response
+    for key in key_sequence:
+        value = value[key]
+    return value
+
 sid = None
+
 def apiCall(endpointKey, payload=None):
   endpointDict = endpoints[endpointKey]
+  payloadKeys = endpointDict["payloadKeys"]
   type = endpointDict["type"]
   endpoint = "%s%s" %(piholeAPI, endpointDict["endpoint"])
   headers = {
@@ -92,14 +104,16 @@ def apiCall(endpointKey, payload=None):
     response = requests.delete(endpoint, json=payload, headers=headers)
 
   logger.debug("Response code: %s" %(response.status_code))
-  logger.debug(response.json())
+  # logger.debug("Response: %s", response.json())
 
   if response.status_code == 200:
     success = True
   else:
     success = False
 
-  return(success, response.json())
+  extractedResponse =  extract_from_response(response.json(), payloadKeys)
+  logger.debug("Extracted Response: %s", extractedResponse)
+  return(success,extractedResponse)
 
 def auth():
   logger.debug("Authenticating with pihole API...")
@@ -108,17 +122,17 @@ def auth():
     logger.error("Authentication failed: %s" %(response))
     sys.exit(1)
   logger.debug("done")
-  return response["session"]["sid"]
+  return response
 
 def listExisting():
   logger.debug("Fetching current records...")
 
   dnsSuccess, dnsResult = apiCall("dns")
-  dns = set([tuple(x) for x in dnsResult["data"]])
+  dns = set(dnsResult)
   logger.debug("DNS Records: %s" %(dns))
 
   cnameSuccess, cnameResult = apiCall("cname")
-  cname = set([tuple(x) for x in cnameResult["data"]])
+  cname = set(cnameResult)
   logger.debug("CName Records: %s" %(cname))
 
   logger.debug("done")
