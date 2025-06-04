@@ -138,7 +138,7 @@ def listExisting():
   logger.debug("done")
   return({"dns": dns, "cname": cname})
 
-def addObject(obj, existingrecords):
+def addObject(obj, existingRecords):
   domain = False
   ip = False
   cname = False
@@ -149,14 +149,14 @@ def addObject(obj, existingrecords):
   logger.debug("target (%s): %s" %(type(target), target))
   logger.debug("is_ip: %s" %(str(is_ip)))
   if is_ip:
-    if obj in existingrecords["dns"]:
+    if obj in existingRecords["dns"]:
       success, result = [True, "This record already exists, adding to state."]
       logger.debug(result)
     else:
       success, result = apiCall("customdns", "add", domain, target)
       logger.debug(result)
   else:
-    if obj in existingrecords["cname"]:
+    if obj in existingRecords["cname"]:
       success, result = [True, "This record already exists, adding to state."]
       logger.debug(result)
     else:
@@ -170,7 +170,7 @@ def addObject(obj, existingrecords):
     logger.error("Failed to add to list: %s" %(str(result)))
 
 
-def removeObject(obj, existingrecords):
+def removeObject(obj, existingRecords):
   domain = False
   ip = False
   cname = False
@@ -183,14 +183,14 @@ def removeObject(obj, existingrecords):
   logger.debug("is_ip: %s" %(str(is_ip)))
 
   if is_ip:
-    if obj not in existingrecords["dns"]:
+    if obj not in existingRecords["dns"]:
       success, result = [True, "This record doesn't exist, removing from state."]
       logger.debug(result)
     else:
       success, result = apiCall("customdns", "delete", domain, target)
       logger.debug(result)
   else:
-    if obj not in existingrecords["cname"]:
+    if obj not in existingRecords["cname"]:
       success, result = [True, "This record doesn't exist, removing from state."]
       logger.debug(result)
     else:
@@ -203,25 +203,25 @@ def removeObject(obj, existingrecords):
   else:
     logger.error("Failed to remove from list: %s" %(str(result)))
 
-def handleList(newGlobalList, existingrecords):
+def handleList(newGlobalList, existingRecords):
   toAdd = set([x for x in newGlobalList if x not in globalList])
   toRemove = set([x for x in globalList if x not in newGlobalList])
-  toSync = set([x for x in globalList if ((x not in existingrecords["dns"]) and (x not in existingrecords["cname"]))])
+  toSync = set([x for x in globalList if ((x not in existingRecords["dns"]) and (x not in existingRecords["cname"]))])
 
   if len(toAdd) > 0:
     logger.debug("These are labels to add: %s" %(toAdd))
     for add in toAdd:
-      addObject(add, existingrecords)
+      addObject(add, existingRecords)
 
   if len(toRemove) > 0:
     logger.debug("These are labels to remove: %s" %(toRemove))
     for remove in toRemove:
-      removeObject(remove, existingrecords)
+      removeObject(remove, existingRecords)
 
   if len(toSync) > 0:
     logger.debug("These are labels to sync: %s" %(toSync))
     for sync in (toSync-toAdd-toRemove):
-      addObject(sync, existingrecords)
+      addObject(sync, existingRecords)
 
   printState()
   flushList()
@@ -240,7 +240,7 @@ if __name__ == "__main__":
       containers = client.containers.list()
       globalListBefore = globalList.copy()
       newGlobalList = set()
-      existingrecords = listExisting()
+      existingRecords = listExisting()
       for container in containers:
         customRecordsLabel = container.labels.get("pihole.custom-record")
         if customRecordsLabel:
@@ -248,7 +248,7 @@ if __name__ == "__main__":
           for cr in customRecords:
             newGlobalList.add(tuple(cr))
 
-      handleList(newGlobalList, existingrecords)
+      handleList(newGlobalList, existingRecords)
       logger.info("Run sync")
 
       time.sleep(intervalSeconds)
