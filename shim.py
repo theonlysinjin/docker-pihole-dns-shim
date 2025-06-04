@@ -136,11 +136,11 @@ def apiCall(endpointKey, payload=None):
 
   extractedResponse = None
 
-  if response.status_code == 200 :
+  if response.status_code == 200:
     success = True
     extractedResponse =  extract_from_response(response.json(), payloadKeys)
     logger.debug("Extracted Response: %s", extractedResponse)
-  elif response.status_code == 204:
+  elif response.status_code == 204 or response.status_code == 201:
     success = True
   else:
     success = False
