@@ -4,7 +4,7 @@ build:
 	docker build . -t ${TAG}
 
 run:
-	docker run -it \
+	docker run --rm -it \
 	-v ${PWD}/shim.py:/app/shim.py \
 	-v ${PWD}/tmp/state:/state \
 	--env-file .env \
