@@ -97,7 +97,7 @@ If you are still using Pi-hole v5, use the `theonlysinjin/docker-pihole-dns-shim
 
 ## Upgrading from v5 to v6
 
-- Official Pi-hole v6 upgrade guide: [https://docs.pi-hole.net/v6/upgrade/](https://docs.pi-hole.net/v6/upgrade/)
+- Official Pi-hole v6 upgrade guide: [https://docs.pi-hole.net/docker/upgrading/v5-v6/](https://docs.pi-hole.net/docker/upgrading/v5-v6/)
 - **TL;DR of what's changed:**
   - Pi-hole v6 introduces a new REST API and changes to authentication.
   - This project now uses the v6 API and requires an app password or admin password.

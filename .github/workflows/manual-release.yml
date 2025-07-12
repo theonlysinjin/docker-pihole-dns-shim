@@ -59,4 +59,4 @@ jobs:
       - name: Push new version tag (GHCR)
         if: steps.release.outputs.release_created == 'true'
         run: |
-          docker push ghcr.io/${{ github.repository }}:${{ steps.release.outputs.tag_name }} 
+          docker push ghcr.io/${{ github.repository }}:${{ steps.release.outputs.tag_name }}
