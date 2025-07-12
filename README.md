@@ -1,24 +1,42 @@
 # docker-pihole-dns-shim
-Synchronise records founds through docker labels with pihole's custom dns and cname records.  
-# How to get started
-## Find your secret pihole token
-- Navigate to the [api tab](http://pi.hole:8080/admin/settings.php?tab=api) in your pihole settings
-- Click the `Show API token` button
-- Copy the `Raw API Token`
-- Use this as `PIHOLE_TOKEN`
 
-## Run
+Synchronise records founds through docker labels with pihole's custom dns and cname records.  
+
+## NOTE
+
+- This is now configured to work with pihole v6 as the old api is no longer allowed.
+
+## How to get started
+
+### Find your secret pihole token
+
+- Navigate to the [api tab](http://pi.hole:8080/admin/settings/api) in your pihole settings
+- Click the `Basic` button to change to `Expert`
+- Click the `Configure app password`
+- Copy the new app password and save it
+- Click `Replace app password`
+- Use this as `PIHOLE_TOKEN`
+- Also enable the `webserver.api.app_sudo` in the config for your pihole
+
+OR
+
+- use your admin login password for `PIHOLE_TOKEN`
+
+### Run
+
 cli
+
 ```bash
 docker run \
   -l "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"]]" \
   -e PIHOLE_TOKEN="" \
-  -e PIHOLE_API="http://pi.hole:8080/admin/api.php" \
-  -e STATE_FILE="/state/pihole.state" \
+  -e PIHOLE_API="http://pi.hole:8080/api" \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   theonlysinjin/docker-pihole-dns-shim
 ```
+
 docker-compose.yml
+
 ```docker
 services:
   pihole-dns-shim:
@@ -35,43 +53,32 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 ```
-## Label
+
+### Label
+
 Add records to pihole by labelling your docker containers, you can add as many labels(records) to individual containers as you need.  
 An example of the (json-encoded) label is as follows:
+
 ```yaml
 pihole.custom-record:
   - ["pihole-dns-shim.lan", "127.0.0.1"]
   - ["pihole-dns-shim.lan", "www.google.com"]
 ```
+
 as a docker label:
+
 ```
 "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"], [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
 ```
 
-# Development
-## Debug
+## Development
+
+### Debug
+
 You can turn on extra logging by setting the log level to DEBUG,  
 Set an env variable in the container with `LOGGING_LEVEL="DEBUG"`
 
-## API Endpoints
-Make a _GET_ request to the following endpoints.  
-Replace the parts of the url that are in uppercase.
-### Manage A Records
-Add new DNS record  
-http://pi.hole:8080/admin/api.php?customdns&action=add&ip=IPADDRESS&domain=DOMAIN&auth=XXX
+### API Endpoints
 
-Delete existing DNS record  
-http://pi.hole:8080/admin/api.php?customdns&action=delete&ip=IPADDRESS&domain=DOMAIN&auth=XXX
-
-List existing DNS records  
-http://pi.hole:8080/admin/api.php?customdns&action=get&auth=XXX
-
-### Manage CNAME Records
-Add new CNAME record  
-http://pi.hole:8080/admin/api.php?customcname&action=add&domain=DOMAIN&target=TARGET&auth=XXX
-
-Delete existing CNAME record  
-http://pi.hole:8080/admin/api.php?customcname&action=delete&domain=DOMAIN&target=TARGET&auth=XXX
-
-List existing CNAME records  
-http://pi.hole:8080/admin/api.php?customcname&action=get&auth=XXX
+Uses the v6 rest api
+[Api Docs](http://pi.hole:8080/api/docs)

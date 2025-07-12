@@ -4,10 +4,9 @@ dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
 
 client = docker.DockerClient(base_url=dockerUrl)
 
-default_state_path = "/state/pihole.state"
 token = os.getenv('PIHOLE_TOKEN', "")
-piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/admin/api.php")
-statePath = os.getenv('STATE_FILE', default_state_path)
+piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/api")
+statePath = os.getenv('STATE_FILE', "/state/pihole.state")
 intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
 
 loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
@@ -23,6 +22,48 @@ logger = logging.getLogger(__name__)
 global globalList
 globalList = set()
 
+endpoints = {
+    "createAuth": {
+      "type": "post",
+      "endpoint": "/auth",
+      "payloadExtractor": lambda payload: payload["session"]["sid"],
+    },
+    "getAuths": {
+      "type": "get",
+      "endpoint": "/auth/sessions",
+      "payloadExtractor": lambda payload: payload["sessions"],
+    },
+    "deleteAuth": {
+      "type": "delete",
+      "endpoint": "/auth/session",
+    },
+    "dns": {
+      "type": "get",
+      "endpoint": "/config/dns/hosts",
+      "payloadExtractor": lambda payload: payload["config"]["dns"]["hosts"],
+    },
+    "createDns": {
+      "type": "put",
+      "endpoint": "/config/dns/hosts",
+    },
+    "deleteDns": {
+      "type": "delete",
+      "endpoint": "/config/dns/hosts",
+    },
+    "cname": {
+      "type": "get",
+      "endpoint": "/config/dns/cnameRecords",
+      "payloadExtractor": lambda payload: payload["config"]["dns"]["cnameRecords"],
+    },
+    "createCname": {
+      "type": "put",
+      "endpoint": "/config/dns/cnameRecords",
+    },
+    "deleteCname": {
+      "type": "delete",
+      "endpoint": "/config/dns/cnameRecords",
+    },
+}
 
 def ipTest(ip):
   is_ip = False
@@ -41,9 +82,6 @@ def flushList():
   with open(statePath, "w") as outfile:
     outfile.write(jsonObject)
 
-  # with open(statePath, "wb") as fp:
-  #   pickle.dump(globalList, fp)
-
 def readState():
   fileExists = os.path.exists(statePath)
   if fileExists:
@@ -53,7 +91,6 @@ def readState():
       for obj in readList:
         logger.info("From file (%s): %s" %(type(obj), obj))
         globalList.add(tuple(obj))
-      # globalList = set(readList)
   else:
     logger.info("Loading skipped, no db found.")
 
@@ -64,98 +101,122 @@ def printState():
     logger.debug(obj)
   logger.debug("-----------")
 
-def apiCall(endpoint, action, domain=None, target=None):
-  if (action == "get"):
-    r = requests.get("%s?auth=%s&%s&action=%s" %(piholeAPI, token, endpoint, action))
-    if r.json()["data"]:
-      success = True
-    else:
-      success = False
-  else:
-    if endpoint == "customdns":
-      paramName="ip"
-    elif endpoint == "customcname":
-      paramName="target"
-    r = requests.get("%s?auth=%s&%s&action=%s&domain=%s&%s=%s" %(piholeAPI, token, endpoint, action, domain, paramName, target))
-    if r.json()["success"]:
-      success = True
-    else:
-      success = False
+sid = None
 
-  return(success, r.json())
+def apiCall(endpointKey, payload=None):
+  endpointDict = endpoints[endpointKey]
+  payloadExtractor = endpointDict.get("payloadExtractor", lambda x: x)
+  type = endpointDict["type"]
+  endpoint = "%s%s" %(piholeAPI, endpointDict["endpoint"])
+  headers = {
+    "sid": sid,
+    "User-Agent": "docker-pihole-dns-shim",
+  }
+  if type == "get":
+    response = requests.get(endpoint, params=payload, headers=headers)
+  elif type == "post":
+    response = requests.post(endpoint, json=payload, headers=headers)
+  elif type == "delete":
+    response = requests.delete("%s/%s" %(endpoint, payload), headers=headers)
+  elif type == "put":
+    response = requests.put("%s/%s" %(endpoint, payload), headers=headers)
+
+  logger.debug("Response code: %s" %(response.status_code))
+
+  extractedResponse = None
+
+  if response.status_code == 200:
+    success = True
+    extractedResponse = payloadExtractor(response.json())
+    logger.debug("Extracted Response: %s", extractedResponse)
+  elif response.status_code == 204 or response.status_code == 201:
+    success = True
+  else:
+    extractedResponse = response.json()
+    success = False
+
+  return(success, extractedResponse)
+
+def auth():
+  logger.debug("Authenticating with pihole API...")
+  success, response = apiCall("createAuth", payload={"password": token})
+  if not success:
+    logger.error("Authentication failed: %s" %(response))
+    sys.exit(1)
+  logger.debug("done")
+  return response
+
+def cleanSessions():
+  logger.debug("Removing old sessions...")
+  success, sessions = apiCall("getAuths")
+  if not success:
+    logger.error("Failed to fetch sessions: %s" %(sessions))
+    return
+  for session in sessions:
+    if session["current_session"] == False and session["user_agent"] == "docker-pihole-dns-shim":
+      logger.debug("Removing session: %s" %(session["id"]))
+      success, response = apiCall("deleteAuth", payload=session["id"])
+      if not success:
+        logger.error("Failed to delete session %s: %s" %(session, response))
+  logger.debug("done")
 
 def listExisting():
   logger.debug("Fetching current records...")
 
-  dnsSuccess, dnsResult = apiCall("customdns", "get")
-  dns = set([tuple(x) for x in dnsResult["data"]])
+  dnsSuccess, dnsResult = apiCall("dns")
+  dns = set(tuple(item.split(" ", 1)[::-1]) for item in dnsResult)
   logger.debug("DNS Records: %s" %(dns))
 
-  cnameSuccess, cnameResult = apiCall("customcname", "get")
-  cname = set([tuple(x) for x in cnameResult["data"]])
+  cnameSuccess, cnameResult = apiCall("cname")
+  cname = set(tuple(item.split(",", 1)) for item in cnameResult)
   logger.debug("CName Records: %s" %(cname))
 
   logger.debug("done")
   return({"dns": dns, "cname": cname})
 
-def addObject(obj, existingrecords):
+def addObject(obj, existingRecords):
   domain = False
-  ip = False
-  cname = False
   logger.info("Adding: " + str(obj))
   domain = obj[0]
   is_ip, target = ipTest(obj[1])
   logger.debug("domain (%s): %s" %(type(domain), domain))
   logger.debug("target (%s): %s" %(type(target), target))
   logger.debug("is_ip: %s" %(str(is_ip)))
-  if is_ip:
-    if obj in existingrecords["dns"]:
-      success, result = [True, "This record already exists, adding to state."]
-      logger.debug(result)
-    else:
-      success, result = apiCall("customdns", "add", domain, target)
-      logger.debug(result)
-  else:
-    if obj in existingrecords["cname"]:
-      success, result = [True, "This record already exists, adding to state."]
-      logger.debug(result)
-    else:
-      success, result = apiCall("customcname", "add", domain, target)
-      logger.debug(result)
 
-  if success:
+  if is_ip:
+    if obj in existingRecords["dns"]:
+      success = True
+    else:
+      success, result = apiCall("createDns", payload="%s %s" %(target, domain))
+  else:
+    if obj in existingRecords["cname"]:
+      success = True
+    else:
+      success, result = apiCall("createCname", payload="%s,%s" %(domain,target))
+
+  if success or ("error" in result and "message" in result["error"] and result["error"]["message"] == "Item already present"):
     globalList.add(obj)
     logger.info("Added to global list after success: %s" %(str(obj)))
   else:
     logger.error("Failed to add to list: %s" %(str(result)))
 
-
-def removeObject(obj, existingrecords):
-  domain = False
-  ip = False
-  cname = False
+def removeObject(obj, existingRecords):
   logger.info("Removing: " + str(obj))
-
   domain = obj[0]
   is_ip, target = ipTest(obj[1])
   logger.debug("domain (%s): %s" %(type(domain), domain))
   logger.debug("target (%s): %s" %(type(target), target))
   logger.debug("is_ip: %s" %(str(is_ip)))
-
   if is_ip:
-    if obj not in existingrecords["dns"]:
-      success, result = [True, "This record doesn't exist, removing from state."]
-      logger.debug(result)
+    if obj not in existingRecords["dns"]:
+      success = True
     else:
-      success, result = apiCall("customdns", "delete", domain, target)
-      logger.debug(result)
+      success, result = apiCall("deleteDns",payload="%s %s" %(target, domain))
   else:
-    if obj not in existingrecords["cname"]:
-      success, result = [True, "This record doesn't exist, removing from state."]
-      logger.debug(result)
+    if obj not in existingRecords["cname"]:
+      success = True
     else:
-      success, result = apiCall("customcname", "delete", domain, target)
-      logger.debug(result)
+      success, result = apiCall("deleteCname",payload="%s,%s" %(domain, target))
 
   if success:
     globalList.remove(obj)
@@ -163,25 +224,25 @@ def removeObject(obj, existingrecords):
   else:
     logger.error("Failed to remove from list: %s" %(str(result)))
 
-def handleList(newGlobalList, existingrecords):
+def handleList(newGlobalList, existingRecords):
   toAdd = set([x for x in newGlobalList if x not in globalList])
   toRemove = set([x for x in globalList if x not in newGlobalList])
-  toSync = set([x for x in globalList if ((x not in existingrecords["dns"]) and (x not in existingrecords["cname"]))])
+  toSync = set([x for x in globalList if ((x not in existingRecords["dns"]) and (x not in existingRecords["cname"]))])
 
+  logger.debug("These are labels to add: %s" %(toAdd))
   if len(toAdd) > 0:
-    logger.debug("These are labels to add: %s" %(toAdd))
     for add in toAdd:
-      addObject(add, existingrecords)
+      addObject(add, existingRecords)
 
+  logger.debug("These are labels to remove: %s" %(toRemove))
   if len(toRemove) > 0:
-    logger.debug("These are labels to remove: %s" %(toRemove))
     for remove in toRemove:
-      removeObject(remove, existingrecords)
+      removeObject(remove, existingRecords)
 
+  logger.debug("These are labels to sync: %s" %(toSync))
   if len(toSync) > 0:
-    logger.debug("These are labels to sync: %s" %(toSync))
     for sync in (toSync-toAdd-toRemove):
-      addObject(sync, existingrecords)
+      addObject(sync, existingRecords)
 
   printState()
   flushList()
@@ -193,13 +254,16 @@ if __name__ == "__main__":
 
   else:
     readState()
+    sid = auth()
+    cleanSessions()
 
     while True:
+      logger.info("Running sync")
       logger.debug("Listing containers...")
       containers = client.containers.list()
       globalListBefore = globalList.copy()
       newGlobalList = set()
-      existingrecords = listExisting()
+      existingRecords = listExisting()
       for container in containers:
         customRecordsLabel = container.labels.get("pihole.custom-record")
         if customRecordsLabel:
@@ -207,7 +271,6 @@ if __name__ == "__main__":
           for cr in customRecords:
             newGlobalList.add(tuple(cr))
 
-      handleList(newGlobalList, existingrecords)
-      logger.info("Run sync")
-
+      handleList(newGlobalList, existingRecords)
+      logger.info("Sleeping for %s" %(intervalSeconds))
       time.sleep(intervalSeconds)
