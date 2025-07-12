@@ -1,24 +1,50 @@
 # docker-pihole-dns-shim
-Synchronise records founds through docker labels with pihole's custom dns and cname records.  
-# How to get started
-## Find your secret pihole token
-- Navigate to the [api tab](http://pi.hole:8080/admin/settings.php?tab=api) in your pihole settings
-- Click the `Show API token` button
-- Copy the `Raw API Token`
+
+Easily synchronise records found through docker labels with pihole's custom dns and cname records.  
+
+
+> ⚠️ **Breaking Change Notice:**  
+> The `latest` image now targets Pi-hole v6 and uses the new API.  
+> If you need Pi-hole v5 support, see the "Legacy (v5) Configuration" section after the setup instructions below.
+
+
+## How to get started
+
+### Find your secret pihole token
+
+**Create an application password**
+- Find System / Settings in the left hand panel,
+- Navigate to the [Web interface / API](http://pi.hole:8080/admin/settings/api) tab in your pihole settings
+- Click the `Basic` button to change to `Expert`
+- Click the `Configure app password`
+- Copy the new app password and save it, this is your last chance
+- Click `Replace app password`
 - Use this as `PIHOLE_TOKEN`
 
-## Run
+**Allow the application password to make changes**
+- Under System / Settings,
+- Navigate to [All settings](http://pi.hole:8080/admin/settings/all)
+- Select the "Webserver and API" tab
+- Find and enable `webserver.api.app_sudo` 
+
+**OR**
+- Use your admin login password for `PIHOLE_TOKEN`
+
+### Run
+
 cli
+
 ```bash
 docker run \
   -l "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"]]" \
   -e PIHOLE_TOKEN="" \
-  -e PIHOLE_API="http://pi.hole:8080/admin/api.php" \
-  -e STATE_FILE="/state/pihole.state" \
+  -e PIHOLE_API="http://pi.hole:8080/api" \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   theonlysinjin/docker-pihole-dns-shim
 ```
+
 docker-compose.yml
+
 ```docker
 services:
   pihole-dns-shim:
@@ -35,43 +61,48 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 ```
-## Label
+
+### Label
+
 Add records to pihole by labelling your docker containers, you can add as many labels(records) to individual containers as you need.  
 An example of the (json-encoded) label is as follows:
+
 ```yaml
 pihole.custom-record:
   - ["pihole-dns-shim.lan", "127.0.0.1"]
   - ["pihole-dns-shim.lan", "www.google.com"]
 ```
+
 as a docker label:
+
 ```
 "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"], [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
 ```
 
-# Development
-## Debug
+## Development
+
+### Debug
+
 You can turn on extra logging by setting the log level to DEBUG,  
 Set an env variable in the container with `LOGGING_LEVEL="DEBUG"`
 
-## API Endpoints
-Make a _GET_ request to the following endpoints.  
-Replace the parts of the url that are in uppercase.
-### Manage A Records
-Add new DNS record  
-http://pi.hole:8080/admin/api.php?customdns&action=add&ip=IPADDRESS&domain=DOMAIN&auth=XXX
+### API Endpoints
 
-Delete existing DNS record  
-http://pi.hole:8080/admin/api.php?customdns&action=delete&ip=IPADDRESS&domain=DOMAIN&auth=XXX
+Uses the v6 rest api
+[Api Docs](http://pi.hole:8080/api/docs)
 
-List existing DNS records  
-http://pi.hole:8080/admin/api.php?customdns&action=get&auth=XXX
+## Legacy (v5) Configuration
 
-### Manage CNAME Records
-Add new CNAME record  
-http://pi.hole:8080/admin/api.php?customcname&action=add&domain=DOMAIN&target=TARGET&auth=XXX
+If you are still using Pi-hole v5, use the `theonlysinjin/docker-pihole-dns-shim:pihole-v5` image tag and refer to the previous configuration instructions [here](https://github.com/theonlysinjin/docker-pihole-dns-shim/tree/pihole-v5).
 
-Delete existing CNAME record  
-http://pi.hole:8080/admin/api.php?customcname&action=delete&domain=DOMAIN&target=TARGET&auth=XXX
+## Upgrading from v5 to v6
 
-List existing CNAME records  
-http://pi.hole:8080/admin/api.php?customcname&action=get&auth=XXX
+- Official Pi-hole v6 upgrade guide: [https://docs.pi-hole.net/docker/upgrading/v5-v6/](https://docs.pi-hole.net/docker/upgrading/v5-v6/)
+- **TL;DR of what's changed:**
+  - Pi-hole v6 introduces a new REST API and changes to authentication.
+  - This project now uses the v6 API and requires an app password or admin password.
+  - The old API is no longer supported in the latest image.
+
+## Acknowledgements
+
+Special thanks to [@phyzical](https://github.com/phyzical) for his support and contributions to code changes!
