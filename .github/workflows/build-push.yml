@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   packages: write
+  pull-requests: write # Needed to create/update PRs
 
 jobs:
   docker:
