@@ -106,19 +106,19 @@ sid = None
 def apiCall(endpointKey, payload=None):
   endpointDict = endpoints[endpointKey]
   payloadExtractor = endpointDict.get("payloadExtractor", lambda x: x)
-  type = endpointDict["type"]
+  http_method = endpointDict["type"]
   endpoint = "%s%s" %(piholeAPI, endpointDict["endpoint"])
   headers = {
     "sid": sid,
     "User-Agent": "docker-pihole-dns-shim",
   }
-  if type == "get":
+  if http_method == "get":
     response = requests.get(endpoint, params=payload, headers=headers)
-  elif type == "post":
+  elif http_method == "post":
     response = requests.post(endpoint, json=payload, headers=headers)
-  elif type == "delete":
+  elif http_method == "delete":
     response = requests.delete("%s/%s" %(endpoint, payload), headers=headers)
-  elif type == "put":
+  elif http_method == "put":
     response = requests.put("%s/%s" %(endpoint, payload), headers=headers)
 
   logger.debug("Response code: %s" %(response.status_code))
