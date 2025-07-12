@@ -1,6 +1,6 @@
 # docker-pihole-dns-shim
 
-Easily synchronise records founds through docker labels with pihole's custom dns and cname records.  
+Easily synchronise records found through docker labels with pihole's custom dns and cname records.  
 
 
 > ⚠️ **Breaking Change Notice:**  
@@ -102,3 +102,7 @@ If you are still using Pi-hole v5, use the `theonlysinjin/docker-pihole-dns-shim
   - Pi-hole v6 introduces a new REST API and changes to authentication.
   - This project now uses the v6 API and requires an app password or admin password.
   - The old API is no longer supported in the latest image.
+
+## Acknowledgements
+
+Special thanks to [@phyzical](https://github.com/phyzical) for his support and contributions to code changes!
