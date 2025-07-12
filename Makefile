@@ -8,4 +8,4 @@ run:
 	-v ${PWD}/shim.py:/app/shim.py \
 	-v ${PWD}/tmp/state:/state \
 	--env-file .env \
-	${TAG} 
+	${TAG}
