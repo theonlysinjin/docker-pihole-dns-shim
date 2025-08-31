@@ -1,4 +1,4 @@
-import docker, time, requests, json, socket, os, sys, logging
+import docker, time, requests, json, socket, os, sys, logging, threading
 
 dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
 
@@ -8,6 +8,17 @@ token = os.getenv('PIHOLE_TOKEN', "")
 piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/api")
 statePath = os.getenv('STATE_FILE', "/state/pihole.state")
 intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
+syncMode = os.getenv('SYNC_MODE', "interval").lower()
+eventDebounceSeconds = int(os.getenv('EVENT_DEBOUNCE_SECONDS', "2"))
+eventActionsEnv = os.getenv('DOCKER_EVENT_ACTIONS')
+if eventActionsEnv:
+  eventActions = set([a.strip() for a in eventActionsEnv.split(',') if a.strip() != ""])
+else:
+  # Default set of container actions that can affect running state or configuration
+  eventActions = set([
+    "create", "start", "stop", "restart", "die", "kill", "oom",
+    "pause", "unpause", "destroy", "rename"
+  ])
 
 loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
 logging.basicConfig(
@@ -21,6 +32,9 @@ logger = logging.getLogger(__name__)
 
 global globalList
 globalList = set()
+sync_lock = threading.Lock()
+pending_sync_event = threading.Event()
+last_sync_ts = 0.0
 
 endpoints = {
     "createAuth": {
@@ -247,30 +261,127 @@ def handleList(newGlobalList, existingRecords):
   printState()
   flushList()
 
+def sync_once():
+  with sync_lock:
+    logger.info("Running sync")
+    logger.debug("Listing containers...")
+    containers = client.containers.list()
+    newGlobalList = set()
+    existingRecords = listExisting()
+    for container in containers:
+      try:
+        customRecordsLabel = container.labels.get("pihole.custom-record")
+      except Exception as ex:
+        logger.debug("Error reading labels from container %s: %s" % (getattr(container, 'name', 'unknown'), ex))
+        continue
+      if customRecordsLabel:
+        try:
+          customRecords = json.loads(customRecordsLabel)
+        except Exception as ex:
+          logger.error("Invalid JSON in label for container %s: %s" % (getattr(container, 'name', 'unknown'), ex))
+          continue
+        for cr in customRecords:
+          try:
+            newGlobalList.add(tuple(cr))
+          except Exception as ex:
+            logger.error("Invalid record %s on container %s: %s" % (cr, getattr(container, 'name', 'unknown'), ex))
+    handleList(newGlobalList, existingRecords)
+    # Update last sync time for debounce logic shared across modes
+    global last_sync_ts
+    last_sync_ts = time.time()
+
+def interval_loop(stop_event: threading.Event):
+  while not stop_event.is_set():
+    sync_once()
+    logger.info("Sleeping for %s" % (intervalSeconds))
+    # Use event wait to allow timely shutdowns
+    stop_event.wait(intervalSeconds)
+
+def events_loop(stop_event: threading.Event):
+  logger.info("Starting Docker events listener with actions: %s" % (sorted(list(eventActions))))
+  # Build filters for Docker events API
+  filters = {"type": "container"}
+  if eventActions:
+    filters["event"] = list(eventActions)
+  while not stop_event.is_set():
+    try:
+      for event in client.events(decode=True, filters=filters):
+        if stop_event.is_set():
+          break
+        try:
+          # docker-py may provide either 'Action' or 'status'
+          action = event.get('Action') or event.get('status') or ''
+          if action and (not eventActions or action in eventActions):
+            container_name = (event.get('Actor') or {}).get('Attributes', {}).get('name', 'unknown')
+            logger.debug("Event '%s' from container '%s' -> mark pending sync" % (action, container_name))
+            pending_sync_event.set()
+        except Exception as inner_ex:
+          logger.debug("Error handling event: %s" % (inner_ex))
+    except Exception as ex:
+      logger.error("Docker events stream error: %s" % (ex))
+      # Backoff before retrying the event stream
+      time.sleep(5)
+
+def events_scheduler_loop(stop_event: threading.Event):
+  logger.info("Starting events debounce scheduler (debounce=%ss)" % (eventDebounceSeconds))
+  while not stop_event.is_set():
+    # Wait a short interval to check flags while still allowing prompt shutdown
+    stop_event.wait(0.5)
+    if stop_event.is_set():
+      break
+    if pending_sync_event.is_set():
+      now = time.time()
+      if (now - last_sync_ts) >= eventDebounceSeconds:
+        logger.info("Pending events detected and debounce window passed -> triggering sync")
+        # Clear before running to coalesce bursts; any new event during sync will re-set it
+        pending_sync_event.clear()
+        try:
+          sync_once()
+        except Exception as ex:
+          logger.error("Error during scheduled sync: %s" % (ex))
+      else:
+        logger.debug("Pending sync set, waiting for debounce window")
+
 if __name__ == "__main__":
   if token == "":
     logger.warning("pihole token is blank, Set a token environment variable PIHOLE_TOKEN")
     sys.exit(1)
-
   else:
     readState()
     sid = auth()
     cleanSessions()
 
-    while True:
-      logger.info("Running sync")
-      logger.debug("Listing containers...")
-      containers = client.containers.list()
-      globalListBefore = globalList.copy()
-      newGlobalList = set()
-      existingRecords = listExisting()
-      for container in containers:
-        customRecordsLabel = container.labels.get("pihole.custom-record")
-        if customRecordsLabel:
-          customRecords = json.loads(customRecordsLabel)
-          for cr in customRecords:
-            newGlobalList.add(tuple(cr))
+    logger.info("Sync mode: %s" % (syncMode))
 
-      handleList(newGlobalList, existingRecords)
-      logger.info("Sleeping for %s" %(intervalSeconds))
-      time.sleep(intervalSeconds)
+    stop_event = threading.Event()
+    threads = []
+
+    if syncMode in ["interval", "both"]:
+      t = threading.Thread(target=interval_loop, args=(stop_event,), daemon=True)
+      threads.append(t)
+      t.start()
+
+    if syncMode in ["events", "both"]:
+      t = threading.Thread(target=events_loop, args=(stop_event,), daemon=True)
+      threads.append(t)
+      t.start()
+      s = threading.Thread(target=events_scheduler_loop, args=(stop_event,), daemon=True)
+      threads.append(s)
+      s.start()
+
+    # If no valid mode provided, default to interval for backward compatibility
+    if len(threads) == 0:
+      logger.warning("Unknown SYNC_MODE '%s'. Falling back to 'interval' mode." % (syncMode))
+      t = threading.Thread(target=interval_loop, args=(stop_event,), daemon=True)
+      threads.append(t)
+      t.start()
+
+    # Keep the main thread alive
+    try:
+      while True:
+        time.sleep(1)
+    except KeyboardInterrupt:
+      logger.info("Shutdown requested, stopping threads...")
+      stop_event.set()
+      for t in threads:
+        t.join(timeout=3)

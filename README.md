@@ -58,6 +58,10 @@ services:
       PIHOLE_API: "${PIHOLE_API}"
       # LOGGING_LEVEL: "DEBUG"
       # STATE_FILE: "/state/pihole.state"
+      # INTERVAL_SECONDS: "10"            # used in interval mode
+      # SYNC_MODE: "interval"             # one of: interval, events, both
+      # EVENT_DEBOUNCE_SECONDS: "2"       # min seconds between event-triggered syncs
+      # DOCKER_EVENT_ACTIONS: "start,stop,die,create,unpause,oom,kill" # filter actions
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 ```
@@ -85,6 +89,23 @@ as a docker label:
 
 You can turn on extra logging by setting the log level to DEBUG,  
 Set an env variable in the container with `LOGGING_LEVEL="DEBUG"`
+
+### Sync modes
+
+The shim can now synchronize in two ways (or both):
+
+- interval: Performs a full scan and sync every `INTERVAL_SECONDS` (default 10s).
+- events: Listens to Docker container events and triggers a sync when matching actions occur.
+- both: Runs both strategies concurrently for maximum responsiveness and eventual consistency.
+
+Configuration via environment variables:
+
+- `SYNC_MODE` (default: `interval`): `interval`, `events`, or `both`.
+- `INTERVAL_SECONDS` (default: `10`): Poll interval used when interval mode is active.
+- `EVENT_DEBOUNCE_SECONDS` (default: `2`): Minimum seconds between event-triggered syncs to avoid flapping.
+- `DOCKER_EVENT_ACTIONS` (optional): Comma-separated list of actions to listen for; defaults to common lifecycle events like `create,start,stop,restart,die,kill,oom,pause,unpause,destroy,rename`.
+
+Event reference: see Docker events for containers in the docs: [Docker events — Containers](https://docs.docker.com/reference/cli/docker/system/events/#containers)
 
 ### API Endpoints
 
