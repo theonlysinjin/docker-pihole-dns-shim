@@ -9,7 +9,7 @@ piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/api")
 statePath = os.getenv('STATE_FILE', "/state/pihole.state")
 intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
 syncMode = os.getenv('SYNC_MODE', "interval").lower()
-eventDebounceSeconds = int(os.getenv('EVENT_DEBOUNCE_SECONDS', "2"))
+eventBatchIntervalMs = int(os.getenv('EVENT_BATCH_INTERVAL_MS', "500"))
 eventActionsEnv = os.getenv('DOCKER_EVENT_ACTIONS')
 if eventActionsEnv:
   eventActions = set([a.strip() for a in eventActionsEnv.split(',') if a.strip() != ""])
@@ -33,8 +33,9 @@ logger = logging.getLogger(__name__)
 global globalList
 globalList = set()
 sync_lock = threading.Lock()
-pending_sync_event = threading.Event()
-last_sync_ts = 0.0
+containerRecords = {}
+pending_containers = set()
+pending_containers_lock = threading.Lock()
 
 endpoints = {
     "createAuth": {
@@ -267,6 +268,7 @@ def sync_once():
     logger.debug("Listing containers...")
     containers = client.containers.list()
     newGlobalList = set()
+    newContainerRecords = {}
     existingRecords = listExisting()
     for container in containers:
       try:
@@ -285,10 +287,14 @@ def sync_once():
             newGlobalList.add(tuple(cr))
           except Exception as ex:
             logger.error("Invalid record %s on container %s: %s" % (cr, getattr(container, 'name', 'unknown'), ex))
+        try:
+          newContainerRecords[container.id] = set(tuple(cr) for cr in customRecords)
+        except Exception as ex:
+          logger.debug("Error building per-container record set for %s: %s" % (getattr(container, 'name', 'unknown'), ex))
     handleList(newGlobalList, existingRecords)
-    # Update last sync time for debounce logic shared across modes
-    global last_sync_ts
-    last_sync_ts = time.time()
+    # Refresh per-container mapping after successful reconciliation
+    global containerRecords
+    containerRecords = newContainerRecords
 
 def interval_loop(stop_event: threading.Event):
   while not stop_event.is_set():
@@ -313,8 +319,11 @@ def events_loop(stop_event: threading.Event):
           action = event.get('Action') or event.get('status') or ''
           if action and (not eventActions or action in eventActions):
             container_name = (event.get('Actor') or {}).get('Attributes', {}).get('name', 'unknown')
-            logger.debug("Event '%s' from container '%s' -> mark pending sync" % (action, container_name))
-            pending_sync_event.set()
+            container_id = event.get('id') or (event.get('Actor') or {}).get('ID')
+            if container_id:
+              with pending_containers_lock:
+                pending_containers.add(container_id)
+              logger.debug("Event '%s' for '%s' queued for incremental sync" % (action, container_name))
         except Exception as inner_ex:
           logger.debug("Error handling event: %s" % (inner_ex))
     except Exception as ex:
@@ -322,25 +331,109 @@ def events_loop(stop_event: threading.Event):
       # Backoff before retrying the event stream
       time.sleep(5)
 
+def _find_mapping_key_by_prefix(container_id_prefix):
+  for key in list(containerRecords.keys()):
+    try:
+      if key.startswith(container_id_prefix):
+        return key
+    except Exception:
+      continue
+  return None
+
+def _get_container_if_running(container_id):
+  try:
+    container = client.containers.get(container_id)
+  except Exception:
+    return None
+  try:
+    running = container.attrs.get('State', {}).get('Running', False)
+  except Exception:
+    running = False
+  return container if running else None
+
+def _get_records_from_label(label_value):
+  records = set()
+  try:
+    if not label_value:
+      return records
+    parsed = json.loads(label_value)
+    for cr in parsed:
+      records.add(tuple(cr))
+  except Exception as ex:
+    logger.error("Invalid JSON in label: %s" % (ex))
+  return records
+
+def process_containers_batch(container_ids):
+  with sync_lock:
+    if not container_ids:
+      return
+    logger.info("Processing %s container(s) from event queue" % (len(container_ids)))
+    existingRecords = listExisting()
+    for cid in container_ids:
+      # Normalize to full id if we already know it
+      mapped_key = _find_mapping_key_by_prefix(cid)
+      key_to_use = mapped_key if mapped_key else cid
+      container = _get_container_if_running(cid)
+      if container is None:
+        # Treat as removal of previously contributed records (if any)
+        oldRecords = containerRecords.get(key_to_use, set())
+        if len(oldRecords) == 0:
+          continue
+        for rec in list(oldRecords):
+          # Only remove if no other container still references this record
+          referenced_elsewhere = any((rec in recs) for k, recs in containerRecords.items() if k != key_to_use)
+          if not referenced_elsewhere:
+            removeObject(rec, existingRecords)
+        # Cleanup mapping entry
+        if key_to_use in containerRecords:
+          del containerRecords[key_to_use]
+        continue
+
+      # Running container: add/update records based on label
+      try:
+        label_value = container.labels.get("pihole.custom-record")
+      except Exception as ex:
+        logger.debug("Error reading labels from container %s: %s" % (getattr(container, 'name', 'unknown'), ex))
+        continue
+      if not label_value:
+        # No label -> do nothing for running container
+        continue
+      newRecords = _get_records_from_label(label_value)
+      oldRecords = containerRecords.get(container.id, set())
+
+      # Additions: records that are new relative to global list
+      for rec in (newRecords - globalList):
+        addObject(rec, existingRecords)
+
+      # Removals: records that this container no longer has, and not referenced by others
+      for rec in (oldRecords - newRecords):
+        referenced_elsewhere = any((rec in recs) for k, recs in containerRecords.items() if k != container.id)
+        if not referenced_elsewhere:
+          removeObject(rec, existingRecords)
+
+      # Update mapping and global state for this container
+      containerRecords[container.id] = newRecords
+
+    flushList()
+
 def events_scheduler_loop(stop_event: threading.Event):
-  logger.info("Starting events debounce scheduler (debounce=%ss)" % (eventDebounceSeconds))
+  logger.info("Starting events batch scheduler (interval=%dms)" % (eventBatchIntervalMs))
+  interval_seconds = max(eventBatchIntervalMs, 50) / 1000.0
   while not stop_event.is_set():
     # Wait a short interval to check flags while still allowing prompt shutdown
-    stop_event.wait(0.5)
+    stop_event.wait(interval_seconds)
     if stop_event.is_set():
       break
-    if pending_sync_event.is_set():
-      now = time.time()
-      if (now - last_sync_ts) >= eventDebounceSeconds:
-        logger.info("Pending events detected and debounce window passed -> triggering sync")
-        # Clear before running to coalesce bursts; any new event during sync will re-set it
-        pending_sync_event.clear()
-        try:
-          sync_once()
-        except Exception as ex:
-          logger.error("Error during scheduled sync: %s" % (ex))
-      else:
-        logger.debug("Pending sync set, waiting for debounce window")
+    with pending_containers_lock:
+      if len(pending_containers) == 0:
+        continue
+      # Drain the current set
+      batch = list(pending_containers)
+      pending_containers.clear()
+    try:
+      process_containers_batch(batch)
+    except Exception as ex:
+      logger.error("Error during incremental sync batch: %s" % (ex))
 
 if __name__ == "__main__":
   if token == "":
@@ -356,12 +449,23 @@ if __name__ == "__main__":
     stop_event = threading.Event()
     threads = []
 
-    if syncMode in ["interval", "both"]:
+    # Validate sync mode: only 'interval' or 'events'
+    if syncMode not in ["interval", "events"]:
+      logger.warning("Unknown SYNC_MODE '%s'. Falling back to 'interval'." % (syncMode))
+      syncMode = "interval"
+
+    if syncMode in ["interval"]:
       t = threading.Thread(target=interval_loop, args=(stop_event,), daemon=True)
       threads.append(t)
       t.start()
 
-    if syncMode in ["events", "both"]:
+    if syncMode in ["events"]:
+      # Full sync on startup to establish state
+      sync_once()
+      # Start interval full sync to keep things fresh
+      t = threading.Thread(target=interval_loop, args=(stop_event,), daemon=True)
+      threads.append(t)
+      t.start()
       t = threading.Thread(target=events_loop, args=(stop_event,), daemon=True)
       threads.append(t)
       t.start()

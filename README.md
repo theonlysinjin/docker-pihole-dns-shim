@@ -58,9 +58,9 @@ services:
       PIHOLE_API: "${PIHOLE_API}"
       # LOGGING_LEVEL: "DEBUG"
       # STATE_FILE: "/state/pihole.state"
-      # INTERVAL_SECONDS: "10"            # used in interval mode
-      # SYNC_MODE: "interval"             # one of: interval, events, both
-      # EVENT_DEBOUNCE_SECONDS: "2"       # min seconds between event-triggered syncs
+      # INTERVAL_SECONDS: "10"            # full sync cadence
+      # SYNC_MODE: "interval"             # one of: interval, events
+      # EVENT_BATCH_INTERVAL_MS: "500"    # process queued containers every N ms
       # DOCKER_EVENT_ACTIONS: "start,stop,die,create,unpause,oom,kill" # filter actions
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
@@ -92,17 +92,16 @@ Set an env variable in the container with `LOGGING_LEVEL="DEBUG"`
 
 ### Sync modes
 
-The shim can now synchronize in two ways (or both):
+The shim can synchronize in two ways:
 
 - interval: Performs a full scan and sync every `INTERVAL_SECONDS` (default 10s).
-- events: Listens to Docker container events and triggers a sync when matching actions occur.
-- both: Runs both strategies concurrently for maximum responsiveness and eventual consistency.
+- events: On startup performs one full sync, continues running periodic full syncs on `INTERVAL_SECONDS`, and between intervals listens to Docker events and performs incremental, per-container updates batched every `EVENT_BATCH_INTERVAL_MS`.
 
 Configuration via environment variables:
 
-- `SYNC_MODE` (default: `interval`): `interval`, `events`, or `both`.
-- `INTERVAL_SECONDS` (default: `10`): Poll interval used when interval mode is active.
-- `EVENT_DEBOUNCE_SECONDS` (default: `2`): Minimum seconds between event-triggered syncs to avoid flapping.
+- `SYNC_MODE` (default: `interval`): `interval` or `events`.
+- `INTERVAL_SECONDS` (default: `10`): Full sync cadence for both modes.
+- `EVENT_BATCH_INTERVAL_MS` (default: `500`): Batch interval for incremental per-container processing in events mode.
 - `DOCKER_EVENT_ACTIONS` (optional): Comma-separated list of actions to listen for; defaults to common lifecycle events like `create,start,stop,restart,die,kill,oom,pause,unpause,destroy,rename`.
 
 Event reference: see Docker events for containers in the docs: [Docker events — Containers](https://docs.docker.com/reference/cli/docker/system/events/#containers)
