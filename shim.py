@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import docker, time, requests, json, socket, os, sys, logging
 
 dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
@@ -7,7 +8,9 @@ client = docker.DockerClient(base_url=dockerUrl)
 token = os.getenv('PIHOLE_TOKEN', "")
 piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/api")
 statePath = os.getenv('STATE_FILE', "/state/pihole.state")
+removalSeconds = int(os.getenv('REMOVAL_SECONDS', "1"))
 intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
+date_format = "%Y-%m-%d %H:%M:%S"
 
 loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
 logging.basicConfig(
@@ -90,6 +93,9 @@ def readState():
       readList = json.load(openfile)
       for obj in readList:
         logger.info("From file (%s): %s" %(type(obj), obj))
+        # Backfill state file
+        if len(obj) < 3:
+          obj.append(datetime.now().strftime(date_format))
         globalList.add(tuple(obj))
   else:
     logger.info("Loading skipped, no db found.")
@@ -176,7 +182,7 @@ def listExisting():
 
 def addObject(obj, existingRecords):
   domain = False
-  logger.info("Adding: " + str(obj))
+  logger.info("Adding/Updating: " + str(obj))
   domain = obj[0]
   is_ip, target = ipTest(obj[1])
   logger.debug("domain (%s): %s" %(type(domain), domain))
@@ -195,13 +201,21 @@ def addObject(obj, existingRecords):
       success, result = apiCall("createCname", payload="%s,%s" %(domain,target))
 
   if success or ("error" in result and "message" in result["error"] and result["error"]["message"] == "Item already present"):
+    obj = obj[:2] + (datetime.now().strftime(date_format),)
     globalList.add(obj)
     logger.info("Added to global list after success: %s" %(str(obj)))
   else:
     logger.error("Failed to add to list: %s" %(str(result)))
 
 def removeObject(obj, existingRecords):
-  logger.info("Removing: " + str(obj))
+  logger.info("Checking " + str(obj) + " For Removal")
+
+  last_seen = datetime.strptime(obj[2], date_format)
+  removal_date = datetime.now() - timedelta(seconds=removalSeconds)
+  if removal_date < last_seen:
+    logger.info("Not Removing for another %s hours" %(last_seen - removal_date))
+    return
+  logger.info("Removing")
   domain = obj[0]
   is_ip, target = ipTest(obj[1])
   logger.debug("domain (%s): %s" %(type(domain), domain))
@@ -226,8 +240,11 @@ def removeObject(obj, existingRecords):
 
 def handleList(newGlobalList, existingRecords):
   toAdd = set([x for x in newGlobalList if x not in globalList])
-  toRemove = set([x for x in globalList if x not in newGlobalList])
-  toSync = set([x for x in globalList if ((x not in existingRecords["dns"]) and (x not in existingRecords["cname"]))])
+  toRemove = set([
+    x for x in globalList
+    if (x[:2] not in newGlobalList)
+  ])
+  toSync = set([x for x in globalList if ((x[:2] not in existingRecords["dns"]) and (x[:2] not in existingRecords["cname"]))])
 
   logger.debug("These are labels to add: %s" %(toAdd))
   if len(toAdd) > 0:
