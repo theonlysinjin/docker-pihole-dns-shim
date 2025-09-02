@@ -239,12 +239,19 @@ def removeObject(obj, existingRecords):
     logger.error("Failed to remove from list: %s" %(str(result)))
 
 def handleList(newGlobalList, existingRecords):
-  toAdd = set([x for x in newGlobalList if x not in globalList])
+  # :2 so that we ditch date for comparing item presence
+  toAdd = set([
+    x for x in newGlobalList
+    if x[:2] not in {y[:2] for y in globalList}
+  ])
   toRemove = set([
     x for x in globalList
     if (x[:2] not in newGlobalList)
   ])
-  toSync = set([x for x in globalList if ((x[:2] not in existingRecords["dns"]) and (x[:2] not in existingRecords["cname"]))])
+  toSync = set([
+    x for x in globalList 
+    if ((x[:2] not in existingRecords["dns"]) and (x[:2] not in existingRecords["cname"]))
+  ]) - toAdd - toRemove
 
   logger.debug("These are labels to add: %s" %(toAdd))
   if len(toAdd) > 0:
@@ -258,7 +265,7 @@ def handleList(newGlobalList, existingRecords):
 
   logger.debug("These are labels to sync: %s" %(toSync))
   if len(toSync) > 0:
-    for sync in (toSync-toAdd-toRemove):
+    for sync in (toSync):
       addObject(sync, existingRecords)
 
   printState()
