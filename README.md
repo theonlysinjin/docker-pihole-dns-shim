@@ -2,17 +2,16 @@
 
 Easily synchronise records found through docker labels with pihole's custom dns and cname records.  
 
-
 > ⚠️ **Breaking Change Notice:**  
 > The `latest` image now targets Pi-hole v6 and uses the new API.  
 > If you need Pi-hole v5 support, see the "Legacy (v5) Configuration" section after the setup instructions below.
-
 
 ## How to get started
 
 ### Find your secret pihole token
 
 **Create an application password**
+
 - Find System / Settings in the left hand panel,
 - Navigate to the [Web interface / API](http://pi.hole:8080/admin/settings/api) tab in your pihole settings
 - Click the `Basic` button to change to `Expert`
@@ -22,12 +21,14 @@ Easily synchronise records found through docker labels with pihole's custom dns 
 - Use this as `PIHOLE_TOKEN`
 
 **Allow the application password to make changes**
+
 - Under System / Settings,
 - Navigate to [All settings](http://pi.hole:8080/admin/settings/all)
 - Select the "Webserver and API" tab
-- Find and enable `webserver.api.app_sudo` 
+- Find and enable `webserver.api.app_sudo`
 
 **OR**
+
 - Use your admin login password for `PIHOLE_TOKEN`
 
 ### Run
@@ -57,10 +58,24 @@ services:
       PIHOLE_TOKEN: "${PIHOLE_TOKEN}"
       PIHOLE_API: "${PIHOLE_API}"
       # LOGGING_LEVEL: "DEBUG"
+      # REMOVAL_SECONDS: 1
+      # INTERVAL_SECONDS: 10
       # STATE_FILE: "/state/pihole.state"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 ```
+
+### Environment Variables
+
+| Env              | Required | Default                    | Description                                                                                                                                                                                    |
+| ---------------- | -------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PIHOLE_TOKEN     | yes      |                            | See Above                                                                                                                                                                                      |
+| PIHOLE_API       | yes      |                            | Api Url of your pihole instance                                                                                                                                                                |
+| DOCKER_URL       | no       | unix://var/run/docker.sock | Defaults to docker socket, or provide [docker proxy](https://github.com/linuxserver/docker-socket-proxy) endpoint                                                                              |
+| LOGGING_LEVEL    | no       | INFO                       | argument                                                                                                                                                                                       |
+| REMOVAL_SECONDS  | no       | 1                          | The amount of seconds to preserve a dns entry before removing it, useful for when you maybe have a container fail to start on reboot or crash, but preserve the dns entry for a period of time |
+| INTERVAL_SECONDS | no       | 10                         | Interval to run syncs                                                                                                                                                                          |
+| STATE_FILE       | no       | /state/pihole.state        | Path to statefile                                                                                                                                                                              |
 
 ### Label
 
