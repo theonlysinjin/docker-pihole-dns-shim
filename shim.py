@@ -80,7 +80,16 @@ def ipTest(ip):
 
   return is_ip, ip
 
+def updateLastSeen():
+  tempList = set()
+  for obj in globalList:
+    tempList.add(obj[:2] + (datetime.now().strftime(date_format),))
+  globalList.clear()
+  for obj in tempList:
+    globalList.add(obj)
+
 def flushList():
+  updateLastSeen()
   jsonObject = json.dumps(list(globalList), indent=2)
   with open(statePath, "w") as outfile:
     outfile.write(jsonObject)
@@ -201,7 +210,6 @@ def addObject(obj, existingRecords):
       success, result = apiCall("createCname", payload="%s,%s" %(domain,target))
 
   if success or ("error" in result and "message" in result["error"] and result["error"]["message"] == "Item already present"):
-    obj = obj[:2] + (datetime.now().strftime(date_format),)
     globalList.add(obj)
     logger.info("Added to global list after success: %s" %(str(obj)))
   else:
