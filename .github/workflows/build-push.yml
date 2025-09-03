@@ -3,8 +3,7 @@ name: Build & Push
 on:
   push:
     branches:
-      - 'main'
-      - 'develop'
+      - '**'
 
 permissions:
   contents: read
@@ -12,9 +11,33 @@ permissions:
   pull-requests: write # Needed to create/update PRs
 
 jobs:
-  docker:
+  tests:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: tests
+    if: github.ref_type == 'branch' && (github.ref_name == 'main' || github.ref_name == 'develop')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 

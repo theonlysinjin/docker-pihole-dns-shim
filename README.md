@@ -57,10 +57,24 @@ services:
       PIHOLE_TOKEN: "${PIHOLE_TOKEN}"
       PIHOLE_API: "${PIHOLE_API}"
       # LOGGING_LEVEL: "DEBUG"
-      # STATE_FILE: "/state/pihole.state"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 ```
+
+### Environment variables
+
+The container can be configured with the following environment variables:
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `PIHOLE_TOKEN` | Yes | — | Pi-hole app password (preferred) or admin password used to authenticate. |
+| `PIHOLE_API` | No | `http://pi.hole:8080/api` | Base URL for the Pi-hole v6 REST API. |
+| `DOCKER_URL` | No | `unix://var/run/docker.sock` | Docker socket URL used by the shim to read container labels. |
+| `STATE_FILE` | No | `/state/pihole.state` | Path to the persisted state file inside the container. |
+| `INTERVAL_SECONDS` | No | `10` | Polling interval for sync loop in seconds. |
+| `REAP_SECONDS` | No | `600` (10m) | Grace period before removing records that are no longer labeled. |
+| `LOGGING_LEVEL` | No | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
+
 
 ### Label
 

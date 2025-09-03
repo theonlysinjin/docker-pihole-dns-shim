@@ -9,3 +9,6 @@ run:
 	-v ${PWD}/tmp/state:/state \
 	--env-file .env \
 	${TAG}
+
+test:
+	. .venv/bin/activate && pytest -q

@@ -8,6 +8,7 @@ token = os.getenv('PIHOLE_TOKEN', "")
 piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/api")
 statePath = os.getenv('STATE_FILE', "/state/pihole.state")
 intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
+reapSeconds = int(os.getenv('REAP_SECONDS', str(10*60)))
 
 loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
 logging.basicConfig(
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 global globalList
 globalList = set()
+global globalLastSeen
+globalLastSeen = {}
 
 endpoints = {
     "createAuth": {
@@ -78,7 +81,15 @@ def ipTest(ip):
   return is_ip, ip
 
 def flushList():
-  jsonObject = json.dumps(list(globalList), indent=2)
+  # Persist state with ownership and last-seen timestamps
+  owned_list = list(globalList)
+  # Only persist last_seen for owned records to avoid bloat
+  last_seen_list = [[k[0], k[1], globalLastSeen.get(k, int(time.time()))] for k in owned_list]
+  jsonObject = json.dumps({
+    "owned": owned_list,
+    "last_seen": last_seen_list,
+    "version": 2
+  }, indent=2)
   with open(statePath, "w") as outfile:
     outfile.write(jsonObject)
 
@@ -86,11 +97,54 @@ def readState():
   fileExists = os.path.exists(statePath)
   if fileExists:
     logger.info("Loading existing state...")
-    with open(statePath, 'r') as openfile:
-      readList = json.load(openfile)
-      for obj in readList:
-        logger.info("From file (%s): %s" %(type(obj), obj))
-        globalList.add(tuple(obj))
+    try:
+      with open(statePath, 'r') as openfile:
+        rawState = json.load(openfile)
+        # Backward compatibility: legacy format was a list of pairs
+        if isinstance(rawState, list):
+          for obj in rawState:
+            logger.info("From file (%s): %s" %(type(obj), obj))
+            tup = tuple(obj)
+            globalList.add(tup)
+            # Initialize last seen to now for legacy state
+            globalLastSeen[tup] = int(time.time())
+        elif isinstance(rawState, dict):
+          version = int(rawState.get("version", 1))
+          if version == 2:
+            owned = rawState.get("owned", [])
+            last_seen = rawState.get("last_seen", [])
+            for obj in owned:
+              tup = tuple(obj)
+              globalList.add(tup)
+            for entry in last_seen:
+              if len(entry) >= 3:
+                tup = (entry[0], entry[1])
+                globalLastSeen[tup] = int(entry[2])
+          elif version == 1:
+            # v1 dict (unexpected) or legacy: try to parse like legacy list
+            owned = rawState.get("owned", [])
+            if owned:
+              for obj in owned:
+                tup = tuple(obj)
+                globalList.add(tup)
+                globalLastSeen[tup] = int(time.time())
+            else:
+              logger.warning("v1 state without 'owned' key, starting fresh")
+          else:
+            logger.warning("Unknown state version %s, attempting best-effort parse" %(version))
+            owned = rawState.get("owned", [])
+            last_seen = rawState.get("last_seen", [])
+            for obj in owned:
+              tup = tuple(obj)
+              globalList.add(tup)
+            for entry in last_seen:
+              if len(entry) >= 3:
+                tup = (entry[0], entry[1])
+                globalLastSeen[tup] = int(entry[2])
+        else:
+          logger.warning("Unknown state format, starting fresh")
+    except Exception as ex:
+      logger.error("Failed to read state, starting fresh: %s" %(ex))
   else:
     logger.info("Loading skipped, no db found.")
 
@@ -196,6 +250,7 @@ def addObject(obj, existingRecords):
 
   if success or ("error" in result and "message" in result["error"] and result["error"]["message"] == "Item already present"):
     globalList.add(obj)
+    globalLastSeen[obj] = int(time.time())
     logger.info("Added to global list after success: %s" %(str(obj)))
   else:
     logger.error("Failed to add to list: %s" %(str(result)))
@@ -225,8 +280,25 @@ def removeObject(obj, existingRecords):
     logger.error("Failed to remove from list: %s" %(str(result)))
 
 def handleList(newGlobalList, existingRecords):
+  now = int(time.time())
   toAdd = set([x for x in newGlobalList if x not in globalList])
-  toRemove = set([x for x in globalList if x not in newGlobalList])
+
+  # Candidates for removal are owned but not currently labeled
+  removalCandidates = set([x for x in globalList if x not in newGlobalList])
+  toRemove = set()
+  for candidate in removalCandidates:
+    last_seen = globalLastSeen.get(candidate)
+    if last_seen is None:
+      # If unknown, initialize now to avoid immediate removal
+      globalLastSeen[candidate] = now
+      last_seen = now
+    age = now - last_seen
+    if age >= reapSeconds:
+      toRemove.add(candidate)
+    else:
+      remaining = reapSeconds - age
+      logger.info("Deferring removal for %s, reaping in ~%ss" %(str(candidate), remaining))
+
   toSync = set([x for x in globalList if ((x not in existingRecords["dns"]) and (x not in existingRecords["cname"]))])
 
   logger.debug("These are labels to add: %s" %(toAdd))
@@ -234,10 +306,13 @@ def handleList(newGlobalList, existingRecords):
     for add in toAdd:
       addObject(add, existingRecords)
 
-  logger.debug("These are labels to remove: %s" %(toRemove))
+  logger.debug("These are labels to remove (after reap window): %s" %(toRemove))
   if len(toRemove) > 0:
     for remove in toRemove:
       removeObject(remove, existingRecords)
+      # After removal, forget last seen as well
+      if remove in globalLastSeen:
+        del globalLastSeen[remove]
 
   logger.debug("These are labels to sync: %s" %(toSync))
   if len(toSync) > 0:
@@ -269,7 +344,10 @@ if __name__ == "__main__":
         if customRecordsLabel:
           customRecords = json.loads(customRecordsLabel)
           for cr in customRecords:
-            newGlobalList.add(tuple(cr))
+            tup = tuple(cr)
+            newGlobalList.add(tup)
+            # Track last seen for currently labeled items
+            globalLastSeen[tup] = int(time.time())
 
       handleList(newGlobalList, existingRecords)
       logger.info("Sleeping for %s" %(intervalSeconds))

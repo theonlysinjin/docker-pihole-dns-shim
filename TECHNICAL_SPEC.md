@@ -22,12 +22,15 @@
 
 ### Configuration (Environment Variables)
 
-- **PIHOLE_TOKEN**: Required. Pi-hole app/admin password for API auth.
-- **PIHOLE_API**: Base API URL. Default: `http://pi.hole:8080/api`
-- **DOCKER_URL**: Docker socket URL. Default: `unix://var/run/docker.sock`
-- **STATE_FILE**: Path to persisted state. Default: `/state/pihole.state`
-- **INTERVAL_SECONDS**: Sync interval in seconds. Default: `10`
-- **LOGGING_LEVEL**: `DEBUG`, `INFO`, etc. Default: `INFO`
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `PIHOLE_TOKEN` | Yes | — | Pi-hole app password (preferred) or admin password used to authenticate. |
+| `PIHOLE_API` | No | `http://pi.hole:8080/api` | Base URL for the Pi-hole v6 REST API. |
+| `DOCKER_URL` | No | `unix://var/run/docker.sock` | Docker socket URL used by the shim to read container labels. |
+| `STATE_FILE` | No | `/state/pihole.state` | Path to the persisted state file inside the container. |
+| `INTERVAL_SECONDS` | No | `10` | Polling interval for sync loop in seconds. |
+| `REAP_SECONDS` | No | `600` (10m) | Grace period before removing records that are no longer labeled. |
+| `LOGGING_LEVEL` | No | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 
 ### External Interfaces
 
@@ -54,27 +57,32 @@
 4. Loop every `INTERVAL_SECONDS` seconds:
    - List running Docker containers.
    - Build `newGlobalList` from all container labels `pihole.custom-record` (parsed JSON, coerced to tuples).
+   - Update per-record `last_seen` for all currently labeled tuples.
    - Fetch current Pi-hole records (hosts and CNAME) and normalize to sets of tuples.
    - Compute:
      - `toAdd`: labels in `newGlobalList` but not in `globalList`.
-     - `toRemove`: labels in `globalList` but not in `newGlobalList`.
+     - `toRemove`: subset of labels in `globalList` but not in `newGlobalList` whose `last_seen` age >= `REAP_SECONDS`.
      - `toSync`: labels in `globalList` missing from Pi-hole (drift correction).
    - Apply changes:
      - For each tuple `(domain, target)`:
        - If `target` is IPv4, manage via hosts endpoints; else via CNAME endpoints.
        - Treat "already present" responses as success.
-   - Update `globalList`, write to `STATE_FILE` (JSON array of pairs), then sleep.
+   - Update `globalList`, write to `STATE_FILE`, then sleep.
 
 ### Record Ownership
 
 - If a labeled record `(domain, target)` already exists in Pi-hole at sync time, the shim treats it as present and adopts it into its managed state.
 - Once adopted, the record is considered owned by the shim: if the corresponding label is later removed from containers, the record will be deleted from Pi-hole on the next sync.
 - Ownership is at the exact tuple level `(domain, target)`; other Pi-hole entries are not modified unless they are also labeled and adopted.
+  - With reaping enabled, deletion only occurs after a record has been unseen for `REAP_SECONDS`.
 
 ### Persistence & State
 
-- State file stores the set of synchronized label tuples as a JSON array.
+- State file stores the set of synchronized label tuples and last-seen timestamps.
 - On startup, the set is restored and used to determine adds/removes and to reconcile drift.
+  - v2 format extends the state with last-seen timestamps to support reaping:
+    - `{ "owned": [[domain, target], ...], "last_seen": [[domain, target, epochSeconds], ...], "version": 2 }`
+    - Legacy list format is still accepted and upgraded in-memory with current timestamps.
 
 ### Logging & Observability
 
