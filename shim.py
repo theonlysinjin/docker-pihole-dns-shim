@@ -299,25 +299,21 @@ def handleList(newGlobalList, existingRecords):
       remaining = reapSeconds - age
       logger.info("Deferring removal for %s, reaping in ~%ss" %(str(candidate), remaining))
 
-  toSync = set([x for x in globalList if ((x not in existingRecords["dns"]) and (x not in existingRecords["cname"]))])
-
   logger.debug("These are labels to add: %s" %(toAdd))
-  if len(toAdd) > 0:
-    for add in toAdd:
-      addObject(add, existingRecords)
+  for add in toAdd:
+    addObject(add, existingRecords)
 
   logger.debug("These are labels to remove (after reap window): %s" %(toRemove))
-  if len(toRemove) > 0:
-    for remove in toRemove:
-      removeObject(remove, existingRecords)
-      # After removal, forget last seen as well
-      if remove in globalLastSeen:
-        del globalLastSeen[remove]
+  for remove in toRemove:
+    removeObject(remove, existingRecords)
+    # After removal, forget last seen as well
+    if remove in globalLastSeen:
+      del globalLastSeen[remove]
 
+  toSync = set([x for x in globalList if ((x not in existingRecords["dns"]) and (x not in existingRecords["cname"]))]) - toAdd - toRemove
   logger.debug("These are labels to sync: %s" %(toSync))
-  if len(toSync) > 0:
-    for sync in (toSync-toAdd-toRemove):
-      addObject(sync, existingRecords)
+  for sync in toSync:
+    addObject(sync, existingRecords)
 
   printState()
   flushList()
