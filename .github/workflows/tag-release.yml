@@ -1,0 +1,66 @@
+name: Tag Release Retag
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  retag-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure tag commit is on main
+        run: |
+          if ! git branch --remotes --contains $GITHUB_SHA | grep -q "origin/main"; then
+            echo "Tag commit is not on main. Aborting release." >&2
+            exit 1
+          fi
+
+      - name: Extract versions
+        id: vars
+        run: |
+          echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Retag GHCR image
+        run: |
+          SRC="ghcr.io/${{ github.repository }}:latest"
+          DEST="ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.tag }}"
+          docker pull "$SRC"
+          docker tag "$SRC" "$DEST"
+          docker push "$DEST"
+
+      - name: Retag Docker Hub image
+        run: |
+          SRC="${{ github.repository }}:latest"
+          DEST="${{ github.repository }}:${{ steps.vars.outputs.tag }}"
+          docker pull "$SRC"
+          docker tag "$SRC" "$DEST"
+          docker push "$DEST"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          generate_release_notes: true
+
