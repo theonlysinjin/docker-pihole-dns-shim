@@ -129,3 +129,38 @@ def test_removeObject_calls_delete_for_ip_and_cname(monkeypatch):
 	assert cname_obj not in shim.globalList
 
 
+def test_main_run_once_calls_sync_once_and_exits(monkeypatch):
+	shim = import_shim_with_docker_stub()
+
+	# Bypass env-based config requirements
+	shim.token = "token"
+
+	# Avoid touching disk/network during the test
+	monkeypatch.setattr(shim, 'readState', lambda: None)
+	monkeypatch.setattr(shim, 'auth', lambda: "sid")
+	monkeypatch.setattr(shim, 'cleanSessions', lambda: None)
+
+	called = []
+	monkeypatch.setattr(shim, 'sync_once', lambda allow_remove=True: called.append(allow_remove))
+	monkeypatch.setattr(shim.time, 'sleep', lambda _: (_ for _ in ()).throw(AssertionError("sleep should not be called in --run-once")))
+
+	rc = shim.main(["--run-once"])
+	assert rc == 0
+	assert called == [True]
+
+
+def test_main_run_once_no_remove_sets_allow_remove_false(monkeypatch):
+	shim = import_shim_with_docker_stub()
+
+	shim.token = "token"
+	monkeypatch.setattr(shim, 'readState', lambda: None)
+	monkeypatch.setattr(shim, 'auth', lambda: "sid")
+	monkeypatch.setattr(shim, 'cleanSessions', lambda: None)
+
+	called = []
+	monkeypatch.setattr(shim, 'sync_once', lambda allow_remove=True: called.append(allow_remove))
+
+	rc = shim.main(["--run-once", "--no-remove"])
+	assert rc == 0
+	assert called == [False]
+

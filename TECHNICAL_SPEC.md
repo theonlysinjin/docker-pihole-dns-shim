@@ -32,6 +32,15 @@
 | `REAP_SECONDS` | No | `600` (10m) | Grace period before removing records that are no longer labeled. |
 | `LOGGING_LEVEL` | No | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 
+### CLI Flags
+
+The container entrypoint is `python /app/shim.py`, so you can pass CLI flags after the image name in `docker run`.
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--run-once` | off | Run a single sync iteration and exit (useful for cron/systemd timers). |
+| `--no-remove` | off | Suppress deletions even when records are eligible for removal by `REAP_SECONDS`. When `LOGGING_LEVEL=DEBUG`, eligible-but-suppressed removals are logged. |
+
 ### External Interfaces
 
 - **Docker**: Reads container labels via Docker Engine API.
