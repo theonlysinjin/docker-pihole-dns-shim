@@ -1,4 +1,5 @@
 import docker, time, requests, json, socket, os, sys, logging
+import signal
 
 dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
 
@@ -317,6 +318,13 @@ def handleList(newGlobalList, existingRecords):
 
   printState()
   flushList()
+class InterruptException(Exception):
+    pass
+
+def signal_handler(signal, frame) -> None:
+    raise InterruptException()
+
+
 
 if __name__ == "__main__":
   if token == "":
@@ -328,23 +336,28 @@ if __name__ == "__main__":
     sid = auth()
     cleanSessions()
 
-    while True:
-      logger.info("Running sync")
-      logger.debug("Listing containers...")
-      containers = client.containers.list()
-      globalListBefore = globalList.copy()
-      newGlobalList = set()
-      existingRecords = listExisting()
-      for container in containers:
-        customRecordsLabel = container.labels.get("pihole.custom-record")
-        if customRecordsLabel:
-          customRecords = json.loads(customRecordsLabel)
-          for cr in customRecords:
-            tup = tuple(cr)
-            newGlobalList.add(tup)
-            # Track last seen for currently labeled items
-            globalLastSeen[tup] = int(time.time())
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    try:
+      while True:
+        logger.info("Running sync")
+        logger.debug("Listing containers...")
+        containers = client.containers.list()
+        globalListBefore = globalList.copy()
+        newGlobalList = set()
+        existingRecords = listExisting()
+        for container in containers:
+          customRecordsLabel = container.labels.get("pihole.custom-record")
+          if customRecordsLabel:
+            customRecords = json.loads(customRecordsLabel)
+            for cr in customRecords:
+              tup = tuple(cr)
+              newGlobalList.add(tup)
+              # Track last seen for currently labeled items
+              globalLastSeen[tup] = int(time.time())
 
-      handleList(newGlobalList, existingRecords)
-      logger.info("Sleeping for %s" %(intervalSeconds))
-      time.sleep(intervalSeconds)
+        handleList(newGlobalList, existingRecords)
+        logger.info("Sleeping for %s" %(intervalSeconds))
+        time.sleep(intervalSeconds)
+    except InterruptException:
+      logger.info("Interrupted, exiting")
