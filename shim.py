@@ -355,7 +355,7 @@ if __name__ == "__main__":
               ip = getIpFromInterface(iface)
               # If the interface doesn't exist, skip it
               if ip:
-                logger.info("Using interface %s for %s" %(iface, ip))
+                logger.debug("Using interface %s for %s" %(iface, ip))
                 newGlobalList.add((tup[0], ip))
             else:
                 newGlobalList.add(tup)
