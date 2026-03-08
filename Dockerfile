@@ -8,7 +8,8 @@ RUN apk add --no-cache \
   python3 \
   py3-pip \
   py3-docker-py \
-  py3-requests
+  py3-requests \
+  py3-psutil
 
 COPY . /app
 RUN mkdir /state
