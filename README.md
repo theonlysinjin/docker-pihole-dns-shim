@@ -120,6 +120,7 @@ docker run --rm \
 If you want to sync labels from multiple Docker hosts, run the shim once per host with a different `DOCKER_URL` / socket each time (e.g. separate cron entries or systemd timers).
 
 - Use **separate state** per host (different host path mounted to `/state`, or different `STATE_FILE`) to avoid cross-host ownership confusion.
+- Each instance automatically generates a unique `SHIM_INSTANCE_ID` on first run and persists it in the state file. This scopes Pi-hole session cleanup to each instance, preventing one shim from invalidating another's session (which would cause `401` errors). You can set `SHIM_INSTANCE_ID` explicitly if you want stable, human-readable identifiers.
 
 ### Environment variables
 
@@ -134,6 +135,7 @@ The container can be configured with the following environment variables:
 | `INTERVAL_SECONDS` | No | `10` | Polling interval for sync loop in seconds. |
 | `REAP_SECONDS` | No | `600` (10m) | Grace period before removing records that are no longer labeled. |
 | `LOGGING_LEVEL` | No | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
+| `SHIM_INSTANCE_ID` | No | auto-generated | Stable identifier for this shim instance. Used to scope Pi-hole session cleanup so multiple shims running against the same Pi-hole do not invalidate each other's sessions. Auto-generated on first run and persisted in the state file. Set this explicitly if you need deterministic IDs (e.g. for easier debugging). |
 
 
 ### Label
