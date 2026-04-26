@@ -46,17 +46,13 @@ jobs:
         run: |
           SRC="ghcr.io/${{ github.repository }}:latest"
           DEST="ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.tag }}"
-          docker pull "$SRC"
-          docker tag "$SRC" "$DEST"
-          docker push "$DEST"
+          docker buildx imagetools create -t "$DEST" "$SRC"
 
       - name: Retag Docker Hub image
         run: |
           SRC="${{ github.repository }}:latest"
           DEST="${{ github.repository }}:${{ steps.vars.outputs.tag }}"
-          docker pull "$SRC"
-          docker tag "$SRC" "$DEST"
-          docker push "$DEST"
+          docker buildx imagetools create -t "$DEST" "$SRC"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
