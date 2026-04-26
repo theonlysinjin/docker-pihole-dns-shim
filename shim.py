@@ -1,4 +1,4 @@
-import docker, time, requests, json, socket, os, sys, logging, argparse
+import docker, time, requests, json, socket, os, sys, logging, argparse, uuid
 
 dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
 
@@ -9,6 +9,7 @@ piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/api")
 statePath = os.getenv('STATE_FILE', "/state/pihole.state")
 intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
 reapSeconds = int(os.getenv('REAP_SECONDS', str(10*60)))
+shimInstanceIdEnv = os.getenv('SHIM_INSTANCE_ID', "")
 
 loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
 logging.basicConfig(
@@ -24,6 +25,8 @@ global globalList
 globalList = set()
 global globalLastSeen
 globalLastSeen = {}
+global instanceId
+instanceId = ""
 
 endpoints = {
     "createAuth": {
@@ -68,6 +71,9 @@ endpoints = {
     },
 }
 
+def userAgent():
+  return "docker-pihole-dns-shim/%s" % instanceId if instanceId else "docker-pihole-dns-shim"
+
 def ipTest(ip):
   is_ip = False
   try:
@@ -81,19 +87,22 @@ def ipTest(ip):
   return is_ip, ip
 
 def flushList():
-  # Persist state with ownership and last-seen timestamps
   owned_list = list(globalList)
-  # Only persist last_seen for owned records to avoid bloat
   last_seen_list = [[k[0], k[1], globalLastSeen.get(k, int(time.time()))] for k in owned_list]
-  jsonObject = json.dumps({
+  state = {
     "owned": owned_list,
     "last_seen": last_seen_list,
-    "version": 2
-  }, indent=2)
+    "version": 2,
+  }
+  if instanceId:
+    state["instance_id"] = instanceId
+  jsonObject = json.dumps(state, indent=2)
   with open(statePath, "w") as outfile:
     outfile.write(jsonObject)
 
 def readState():
+  """Load persisted state. Returns the persisted instance_id string or None."""
+  persisted_instance_id = None
   fileExists = os.path.exists(statePath)
   if fileExists:
     logger.info("Loading existing state...")
@@ -106,9 +115,9 @@ def readState():
             logger.info("From file (%s): %s" %(type(obj), obj))
             tup = tuple(obj)
             globalList.add(tup)
-            # Initialize last seen to now for legacy state
             globalLastSeen[tup] = int(time.time())
         elif isinstance(rawState, dict):
+          persisted_instance_id = rawState.get("instance_id") or None
           version = int(rawState.get("version", 1))
           if version == 2:
             owned = rawState.get("owned", [])
@@ -121,7 +130,6 @@ def readState():
                 tup = (entry[0], entry[1])
                 globalLastSeen[tup] = int(entry[2])
           elif version == 1:
-            # v1 dict (unexpected) or legacy: try to parse like legacy list
             owned = rawState.get("owned", [])
             if owned:
               for obj in owned:
@@ -147,6 +155,7 @@ def readState():
       logger.error("Failed to read state, starting fresh: %s" %(ex))
   else:
     logger.info("Loading skipped, no db found.")
+  return persisted_instance_id
 
 def printState():
   logger.debug("State")
@@ -164,7 +173,7 @@ def apiCall(endpointKey, payload=None):
   endpoint = "%s%s" %(piholeAPI, endpointDict["endpoint"])
   headers = {
     "sid": sid,
-    "User-Agent": "docker-pihole-dns-shim",
+    "User-Agent": userAgent(),
   }
   if http_method == "get":
     response = requests.get(endpoint, params=payload, headers=headers)
@@ -206,8 +215,9 @@ def cleanSessions():
   if not success:
     logger.error("Failed to fetch sessions: %s" %(sessions))
     return
+  my_agent = userAgent()
   for session in sessions:
-    if session["current_session"] == False and session["user_agent"] == "docker-pihole-dns-shim":
+    if session["current_session"] == False and session["user_agent"] == my_agent:
       logger.debug("Removing session: %s" %(session["id"]))
       success, response = apiCall("deleteAuth", payload=session["id"])
       if not success:
@@ -350,7 +360,18 @@ def main(argv=None):
     logger.warning("pihole token is blank, Set a token environment variable PIHOLE_TOKEN")
     return 1
 
-  readState()
+  persisted_instance_id = readState()
+
+  global instanceId
+  if shimInstanceIdEnv:
+    instanceId = shimInstanceIdEnv
+    logger.info("Using instance ID from SHIM_INSTANCE_ID: %s" % instanceId)
+  elif persisted_instance_id:
+    instanceId = persisted_instance_id
+    logger.info("Using persisted instance ID: %s" % instanceId)
+  else:
+    instanceId = str(uuid.uuid4())
+    logger.info("Generated new instance ID: %s" % instanceId)
 
   global sid
   sid = auth()
