@@ -1,4 +1,5 @@
 import docker, time, requests, json, socket, os, sys, logging, argparse
+import signal
 
 dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
 
@@ -322,6 +323,12 @@ def handleList(newGlobalList, existingRecords, *, allow_remove=True):
   printState()
   flushList()
 
+class InterruptException(Exception):
+    pass
+
+def signal_handler(_signum, _frame) -> None:
+    raise InterruptException()
+
 def sync_once(*, allow_remove=True):
   logger.info("Running sync")
   logger.debug("Listing containers...")
@@ -357,15 +364,21 @@ def main(argv=None):
   cleanSessions()
 
   allow_remove = not args.no_remove
+  signal.signal(signal.SIGINT, signal_handler)
+  signal.signal(signal.SIGTERM, signal_handler)
 
-  if args.run_once:
-    sync_once(allow_remove=allow_remove)
+  try:
+    if args.run_once:
+      sync_once(allow_remove=allow_remove)
+      return 0
+
+    while True:
+      sync_once(allow_remove=allow_remove)
+      logger.info("Sleeping for %s" %(intervalSeconds))
+      time.sleep(intervalSeconds)
+  except InterruptException:
+    logger.info("Interrupted, exiting")
     return 0
-
-  while True:
-    sync_once(allow_remove=allow_remove)
-    logger.info("Sleeping for %s" %(intervalSeconds))
-    time.sleep(intervalSeconds)
 
 if __name__ == "__main__":
   sys.exit(main())
