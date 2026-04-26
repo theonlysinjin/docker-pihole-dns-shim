@@ -61,6 +61,66 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 ```
 
+### Run once (cron/systemd timer)
+
+If you don't want a long-running container, you can run a single sync iteration and exit using `--run-once`.
+This is useful for cron or systemd timers.
+
+Example (local Docker socket):
+
+```bash
+docker run --rm \
+  -e PIHOLE_TOKEN="..." \
+  -e PIHOLE_API="http://pi.hole:8080/api" \
+  -e LOGGING_LEVEL="DEBUG" \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v $(pwd)/state:/state \
+  theonlysinjin/docker-pihole-dns-shim --run-once --no-remove
+```
+
+- `--no-remove` is optional. When set, the shim will **not delete** any records even if they are eligible by `REAP_SECONDS`.\
+  With `LOGGING_LEVEL=DEBUG`, you'll see logs like `Suppressed removal (--no-remove): ...` when removals would have happened.
+
+### Using a Docker socket proxy (or remote Docker API)
+
+Instead of mounting `/var/run/docker.sock`, you can point the shim at a TCP Docker API endpoint using `DOCKER_URL` (for example via a docker-socket-proxy container).
+
+```bash
+docker run --rm \
+  -e PIHOLE_TOKEN="..." \
+  -e PIHOLE_API="http://pi.hole:8080/api" \
+  -e DOCKER_URL="tcp://docker-socket-proxy:2375" \
+  -v $(pwd)/state:/state \
+  theonlysinjin/docker-pihole-dns-shim --run-once --no-remove
+```
+
+### SSH proxying a remote Docker unix socket
+
+If you can SSH to the remote Docker host, you can forward the remote `/var/run/docker.sock` to a local unix socket and mount that into the shim.
+
+Create a local forwarded socket:
+
+```bash
+ssh -N -L "$HOME/docker.sock:/var/run/docker.sock" user@10.0.0.1
+```
+
+Then run the shim using the forwarded socket (mount it to `/var/run/docker.sock` so the default `DOCKER_URL=unix://var/run/docker.sock` just works):
+
+```bash
+docker run --rm \
+  -e PIHOLE_TOKEN="..." \
+  -e PIHOLE_API="http://pi.hole:8080/api" \
+  -v "$HOME/docker.sock:/var/run/docker.sock:ro" \
+  -v $(pwd)/state:/state \
+  theonlysinjin/docker-pihole-dns-shim --run-once --no-remove
+```
+
+### Multi-host (run once per host)
+
+If you want to sync labels from multiple Docker hosts, run the shim once per host with a different `DOCKER_URL` / socket each time (e.g. separate cron entries or systemd timers).
+
+- Use **separate state** per host (different host path mounted to `/state`, or different `STATE_FILE`) to avoid cross-host ownership confusion.
+
 ### Environment variables
 
 The container can be configured with the following environment variables:

@@ -1,4 +1,4 @@
-import docker, time, requests, json, socket, os, sys, logging
+import docker, time, requests, json, socket, os, sys, logging, argparse
 
 dockerUrl = os.getenv('DOCKER_URL', "unix://var/run/docker.sock")
 
@@ -279,7 +279,7 @@ def removeObject(obj, existingRecords):
   else:
     logger.error("Failed to remove from list: %s" %(str(result)))
 
-def handleList(newGlobalList, existingRecords):
+def handleList(newGlobalList, existingRecords, *, allow_remove=True):
   now = int(time.time())
   toAdd = set([x for x in newGlobalList if x not in globalList])
 
@@ -304,11 +304,15 @@ def handleList(newGlobalList, existingRecords):
     addObject(add, existingRecords)
 
   logger.debug("These are labels to remove (after reap window): %s" %(toRemove))
-  for remove in toRemove:
-    removeObject(remove, existingRecords)
-    # After removal, forget last seen as well
-    if remove in globalLastSeen:
-      del globalLastSeen[remove]
+  if not allow_remove:
+    if len(toRemove) > 0:
+      logger.debug("Suppressed removal (--no-remove): eligible=%s" %(sorted(list(toRemove))))
+  else:
+    for remove in toRemove:
+      removeObject(remove, existingRecords)
+      # After removal, forget last seen as well
+      if remove in globalLastSeen:
+        del globalLastSeen[remove]
 
   toSync = set([x for x in globalList if ((x not in existingRecords["dns"]) and (x not in existingRecords["cname"]))]) - toAdd - toRemove
   logger.debug("These are labels to sync: %s" %(toSync))
@@ -318,33 +322,50 @@ def handleList(newGlobalList, existingRecords):
   printState()
   flushList()
 
-if __name__ == "__main__":
+def sync_once(*, allow_remove=True):
+  logger.info("Running sync")
+  logger.debug("Listing containers...")
+  containers = client.containers.list()
+  newGlobalList = set()
+  existingRecords = listExisting()
+  for container in containers:
+    customRecordsLabel = container.labels.get("pihole.custom-record")
+    if customRecordsLabel:
+      customRecords = json.loads(customRecordsLabel)
+      for cr in customRecords:
+        tup = tuple(cr)
+        newGlobalList.add(tup)
+        # Track last seen for currently labeled items
+        globalLastSeen[tup] = int(time.time())
+
+  handleList(newGlobalList, existingRecords, allow_remove=allow_remove)
+
+def main(argv=None):
+  parser = argparse.ArgumentParser(description="Synchronise Docker label records into Pi-hole DNS records.")
+  parser.add_argument("--run-once", action="store_true", help="Run a single sync iteration and exit.")
+  parser.add_argument("--no-remove", action="store_true", help="Do not delete records (suppresses removals even when eligible).")
+  args = parser.parse_args(argv)
+
   if token == "":
     logger.warning("pihole token is blank, Set a token environment variable PIHOLE_TOKEN")
-    sys.exit(1)
+    return 1
 
-  else:
-    readState()
-    sid = auth()
-    cleanSessions()
+  readState()
 
-    while True:
-      logger.info("Running sync")
-      logger.debug("Listing containers...")
-      containers = client.containers.list()
-      globalListBefore = globalList.copy()
-      newGlobalList = set()
-      existingRecords = listExisting()
-      for container in containers:
-        customRecordsLabel = container.labels.get("pihole.custom-record")
-        if customRecordsLabel:
-          customRecords = json.loads(customRecordsLabel)
-          for cr in customRecords:
-            tup = tuple(cr)
-            newGlobalList.add(tup)
-            # Track last seen for currently labeled items
-            globalLastSeen[tup] = int(time.time())
+  global sid
+  sid = auth()
+  cleanSessions()
 
-      handleList(newGlobalList, existingRecords)
-      logger.info("Sleeping for %s" %(intervalSeconds))
-      time.sleep(intervalSeconds)
+  allow_remove = not args.no_remove
+
+  if args.run_once:
+    sync_once(allow_remove=allow_remove)
+    return 0
+
+  while True:
+    sync_once(allow_remove=allow_remove)
+    logger.info("Sleeping for %s" %(intervalSeconds))
+    time.sleep(intervalSeconds)
+
+if __name__ == "__main__":
+  sys.exit(main())

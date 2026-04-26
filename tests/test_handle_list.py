@@ -1,4 +1,4 @@
-import sys, types, importlib
+import sys, types, importlib, logging
 
 
 def import_shim_with_docker_stub():
@@ -105,4 +105,34 @@ def test_handleList_syncs_missing_records(monkeypatch):
 
 	assert {("synced.example", "10.0.0.30"), ("alias.example", "host.example")} <= set(added)
 
+
+def test_handleList_no_remove_suppresses_eligible_removals_and_logs_debug(monkeypatch, caplog):
+	shim = import_shim_with_docker_stub()
+	shim.globalList = set()
+	shim.globalLastSeen = {}
+
+	shim.reapSeconds = 100
+	old_rec = ("old.example", "10.0.0.20")
+	shim.globalList.add(old_rec)
+	shim.globalLastSeen[old_rec] = 1000
+
+	# Now is 1200: old is eligible for reap (age 200 >= 100)
+	monkeypatch.setattr(shim.time, 'time', lambda: 1200)
+
+	removed = []
+
+	# Prevent addObject from calling out to API during sync phase
+	monkeypatch.setattr(shim, 'addObject', lambda obj, existing: None)
+	monkeypatch.setattr(shim, 'removeObject', lambda obj, existing: removed.append(obj))
+	monkeypatch.setattr(shim, 'flushList', lambda: None)
+
+	newGlobalList = set()
+	existing = {"dns": set(), "cname": set()}
+
+	with caplog.at_level(logging.DEBUG):
+		shim.handleList(newGlobalList, existing, allow_remove=False)
+
+	assert removed == []
+	assert "Suppressed removal (--no-remove)" in caplog.text
+	assert "old.example" in caplog.text
 
