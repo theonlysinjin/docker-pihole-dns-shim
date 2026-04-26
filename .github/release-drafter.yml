@@ -1,0 +1,59 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+change-template: "- $TITLE by @$AUTHOR in #$NUMBER"
+change-title-escapes: '\<*_&'
+no-changes-template: "- No user-facing changes in this release."
+tag-prefix: "v"
+filter-by-commitish: true
+commitish: "main"
+sort-by: merged_at
+sort-direction: descending
+
+categories:
+  - title: "Features"
+    labels:
+      - "feature"
+      - "enhancement"
+      - "minor"
+  - title: "Fixes"
+    labels:
+      - "fix"
+      - "bug"
+      - "bugfix"
+      - "patch"
+  - title: "Maintenance"
+    labels:
+      - "chore"
+      - "ci"
+      - "refactor"
+      - "test"
+  - title: "Documentation"
+    labels:
+      - "docs"
+      - "documentation"
+
+exclude-labels:
+  - "skip-changelog"
+
+version-resolver:
+  major:
+    labels:
+      - "major"
+      - "breaking-change"
+  minor:
+    labels:
+      - "minor"
+      - "feature"
+      - "enhancement"
+  patch:
+    labels:
+      - "patch"
+      - "fix"
+      - "bug"
+      - "bugfix"
+  default: patch
+
+template: |
+  ## What's Changed
+
+  $CHANGES
