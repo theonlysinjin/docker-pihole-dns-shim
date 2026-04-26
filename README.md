@@ -133,7 +133,13 @@ The container can be configured with the following environment variables:
 | `STATE_FILE` | No | `/state/pihole.state` | Path to the persisted state file inside the container. |
 | `INTERVAL_SECONDS` | No | `10` | Polling interval for sync loop in seconds. |
 | `REAP_SECONDS` | No | `600` (10m) | Grace period before removing records that are no longer labeled. |
+| `OWNERSHIP_MODE` | No | `EXACT` | How to decide which records to keep and which to remove. See [Ownership Mode](#ownership-mode) below. |
 | `LOGGING_LEVEL` | No | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
+
+### Ownership Mode
+
+- `EXACT` (default): Only records that we've seen a label for which has now disappeared will be removed.
+- `DOMAIN`: Delete any records for a domain that matches a label. (i.e., take ownership of the whole domain)
 
 
 ### Label

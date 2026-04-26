@@ -8,6 +8,7 @@ token = os.getenv('PIHOLE_TOKEN', "")
 piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/api")
 statePath = os.getenv('STATE_FILE', "/state/pihole.state")
 intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
+ownershipMode = os.getenv('OWNERSHIP_MODE', "EXACT").upper() # either 'EXACT' or 'DOMAIN'
 reapSeconds = int(os.getenv('REAP_SECONDS', str(10*60)))
 
 loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
@@ -274,7 +275,8 @@ def removeObject(obj, existingRecords):
       success, result = apiCall("deleteCname",payload="%s,%s" %(domain, target))
 
   if success:
-    globalList.remove(obj)
+    if obj in globalList:
+      globalList.remove(obj)
     logger.info("Removed from global list after success: %s" %(str(obj)))
   else:
     logger.error("Failed to remove from list: %s" %(str(result)))
@@ -285,6 +287,12 @@ def handleList(newGlobalList, existingRecords, *, allow_remove=True):
 
   # Candidates for removal are owned but not currently labeled
   removalCandidates = set([x for x in globalList if x not in newGlobalList])
+  owned_domains = set([x[0] for x in newGlobalList])
+  # If we're owning based on domain, remove any records with the same domain that aren't labelled
+  if ownershipMode == "DOMAIN":
+    removalCandidates.update([
+        x for x in existingRecords["dns"]|existingRecords["cname"] if x[0] in owned_domains and x not in newGlobalList
+    ])
   toRemove = set()
   for candidate in removalCandidates:
     last_seen = globalLastSeen.get(candidate)
