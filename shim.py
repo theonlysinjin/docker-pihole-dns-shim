@@ -71,13 +71,16 @@ endpoints = {
 def ipTest(ip):
   is_ip = False
   try:
-   socket.inet_aton(ip)
-   is_ip = True
-  except Exception as ex:
-    template = "An exception of type {0} occurred. Arguments:\n{1!r}"
-    message = template.format(type(ex).__name__, ex.args)
-    logger.debug(message)
-
+    socket.inet_aton(ip)
+    is_ip = True
+  except OSError :
+    pass
+  if not is_ip:
+    try:
+      socket.inet_pton(socket.AF_INET6, ip)
+      is_ip = True
+    except OSError:
+      pass
   return is_ip, ip
 
 def flushList():
