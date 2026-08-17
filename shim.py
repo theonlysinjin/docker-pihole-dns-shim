@@ -9,6 +9,8 @@ piholeAPI = os.getenv('PIHOLE_API', "http://pi.hole:8080/api")
 statePath = os.getenv('STATE_FILE', "/state/pihole.state")
 intervalSeconds = int(os.getenv('INTERVAL_SECONDS', "10"))
 reapSeconds = int(os.getenv('REAP_SECONDS', str(10*60)))
+defaultTargetV4 = os.getenv('DEFAULT_TARGET_IPV4', "")
+defaultTargetV6 = os.getenv('DEFAULT_TARGET_IPV6', "")
 
 loggingLevel = logging.getLevelName(os.getenv('LOGGING_LEVEL', "INFO"))
 logging.basicConfig(
@@ -77,6 +79,15 @@ def ipTest(ip):
     template = "An exception of type {0} occurred. Arguments:\n{1!r}"
     message = template.format(type(ex).__name__, ex.args)
     logger.debug(message)
+
+  if not is_ip:
+    try:
+      socket.inet_pton(socket.AF_INET6, ip)
+      is_ip = True
+    except Exception as ex:
+      template = "An exception of type {0} occurred. Arguments:\n{1!r}"
+      message = template.format(type(ex).__name__, ex.args)
+      logger.debug(message)
 
   return is_ip, ip
 
@@ -322,6 +333,22 @@ def handleList(newGlobalList, existingRecords, *, allow_remove=True):
   printState()
   flushList()
 
+def parseCustomRecords(customRecords):
+  # Expands a 1-element ["domain.tld"] entry into (domain, defaultTargetV4)/
+  # (domain, defaultTargetV6) pairs, using whichever default(s) are actually
+  # configured. 2-element entries (explicit target) are returned unchanged -
+  # fully backward compatible with existing labels.
+  tuples = set()
+  for cr in customRecords:
+    if len(cr) == 1:
+      domain = cr[0]
+      for target in (defaultTargetV4, defaultTargetV6):
+        if target:
+          tuples.add((domain, target))
+    else:
+      tuples.add(tuple(cr))
+  return tuples
+
 def sync_once(*, allow_remove=True):
   logger.info("Running sync")
   logger.debug("Listing containers...")
@@ -332,8 +359,7 @@ def sync_once(*, allow_remove=True):
     customRecordsLabel = container.labels.get("pihole.custom-record")
     if customRecordsLabel:
       customRecords = json.loads(customRecordsLabel)
-      for cr in customRecords:
-        tup = tuple(cr)
+      for tup in parseCustomRecords(customRecords):
         newGlobalList.add(tup)
         # Track last seen for currently labeled items
         globalLastSeen[tup] = int(time.time())

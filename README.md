@@ -134,6 +134,8 @@ The container can be configured with the following environment variables:
 | `INTERVAL_SECONDS` | No | `10` | Polling interval for sync loop in seconds. |
 | `REAP_SECONDS` | No | `600` (10m) | Grace period before removing records that are no longer labeled. |
 | `LOGGING_LEVEL` | No | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
+| `DEFAULT_TARGET_IPV4` | No | — | Fallback IPv4 target used when a `pihole.custom-record` entry omits the target (see [Default target / shorthand labels](#default-target--shorthand-labels)). |
+| `DEFAULT_TARGET_IPV6` | No | — | Fallback IPv6 target used when a `pihole.custom-record` entry omits the target. |
 
 
 ### Label
@@ -152,6 +154,32 @@ as a docker label:
 ```
 "pihole.custom-record=[[\"pihole-dns-shim.lan\", \"127.0.0.1\"], [\"pihole-dns-shim.lan\", \"www.google.com\"]]"
 ```
+
+IPv6 targets are supported the same way - just use an IPv6 literal as the second element:
+
+```yaml
+pihole.custom-record:
+  - ["pihole-dns-shim.lan", "127.0.0.1"]
+  - ["pihole-dns-shim.lan", "2001:db8::1"]
+```
+
+### Default target / shorthand labels
+
+If you're running many containers that should all point at the same host address (a common
+setup behind a single reverse proxy), set `DEFAULT_TARGET_IPV4` and/or `DEFAULT_TARGET_IPV6`
+once on the shim's own container, then omit the target entirely in each label - just the
+domain, as a single-element entry:
+
+```yaml
+pihole.custom-record:
+  - ["app.lan"]
+```
+
+This creates an A record (from `DEFAULT_TARGET_IPV4`) and/or an AAAA record (from
+`DEFAULT_TARGET_IPV6`) for `app.lan`, using whichever default(s) are actually set - if only
+one is configured, only that record type is created. A container can still override with an
+explicit 2-element entry (`["app.lan", "10.0.0.99"]`) when it needs a different target than
+the default; explicit entries always take precedence and are unaffected by the defaults.
 
 ## Development
 
