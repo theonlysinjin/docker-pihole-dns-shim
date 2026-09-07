@@ -59,6 +59,15 @@ Repository instructions for AI agents and Copilot code review.
 - Do not log sensitive values.
 - Treat `PIHOLE_TOKEN` handling as security-sensitive.
 
+## Cursor Cloud specific instructions
+
+Cloud Agents use `.cursor/environment.json`. The environment starts Docker and an API-only Pi-hole fixture (`e2e/docker-compose.yml`) on `http://127.0.0.1:18080/api`. Host DNS port 53 is not published.
+
+- Unit tests: `.venv/bin/pytest -q` (or `make test` after the venv exists).
+- Live e2e: `make test-e2e` (or `bash e2e/run.sh`). This creates a labeled container, runs `shim.py --run-once --no-remove`, and asserts the A and CNAME records appear in Pi-hole's text config (`pihole.toml` / `pihole-FTL --config` and `/etc/pihole/hosts/*`).
+- Fixture password is the throwaway value in `e2e/docker-compose.yml` (`e2e-only-not-a-secret`). Set `PIHOLE_TOKEN` / `PIHOLE_API` to those values when running the shim by hand.
+- Do not publish port 53 or treat this Pi-hole as a resolver. The check is "label in Docker → record in Pi-hole config", not DNS lookup.
+
 ## Out of scope for automated reviews
 
 - Do not suggest replacing project docs with generated boilerplate.

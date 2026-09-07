@@ -12,3 +12,6 @@ run:
 
 test:
 	. .venv/bin/activate && pytest -q
+
+test-e2e:
+	bash e2e/run.sh
