@@ -157,6 +157,14 @@ as a docker label:
 
 ## Development
 
+### Live Pi-hole e2e
+
+Requires Docker. Starts an API-only Pi-hole (web/API on `127.0.0.1:18080`, no host DNS port) and checks that a labeled container's A and CNAME records show up in Pi-hole's text config (`pihole.toml` and `/etc/pihole/hosts`).
+
+```bash
+make test-e2e
+```
+
 ### Debug
 
 You can turn on extra logging by setting the log level to DEBUG,  

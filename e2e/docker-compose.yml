@@ -1,0 +1,15 @@
+# API-only Pi-hole fixture for live shim tests.
+# Host DNS (53) is intentionally not published; the shim talks HTTP to the v6 API.
+name: shim-e2e
+
+services:
+  pihole:
+    image: pihole/pihole:latest
+    container_name: shim-e2e-pihole
+    ports:
+      - "18080:80/tcp"
+    environment:
+      TZ: UTC
+      FTLCONF_webserver_api_password: e2e-only-not-a-secret
+      FTLCONF_dns_listeningMode: ALL
+    restart: unless-stopped
